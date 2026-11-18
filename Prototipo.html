@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="pt-BR">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Clara · Protótipo de finanças pessoais</title>
+<style>
+@font-face {
+  font-family: "Inter Variable";
+  src: url("./InterVariable.woff2?v=4.1") format("woff2");
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+}
+:root{font:16px/1.5 system-ui,sans-serif;color:#172b2a;background:#f4f7f6;--green:#075b4b;--muted:#455b56;--border:#ccd9d4;--error:#a12620}
+*{box-sizing:border-box}body{margin:0}button,input,select{font:inherit}button,a,input,select{touch-action:manipulation}button,a.nav,input,select{min-height:44px}a{color:var(--green)}:focus-visible{outline:3px solid #315bc4;outline-offset:3px}button,.nav{background:white;border:1px solid #71847f;color:var(--green);border-radius:8px;padding:8px 14px;cursor:pointer;text-decoration:none}.primary,.nav[aria-current=page]{background:var(--green);color:white;border-color:var(--green)}.skip{position:absolute;left:16px;top:-80px;background:white;padding:8px}.skip:focus{top:8px}header{background:#fff;border-bottom:1px solid var(--border)}.wrap{max-width:1100px;margin:auto;padding:16px 24px}.mast{display:flex;align-items:center;gap:16px 32px;flex-wrap:wrap}.brand{font-size:1.4rem;font-weight:800}.test{margin-left:auto}nav,.actions{display:flex;gap:8px;flex-wrap:wrap}main.wrap{padding-block:24px 48px}.intro{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}h1,h2,p{margin:0 0 10px}h1{font-size:clamp(1.8rem,4vw,2.5rem);letter-spacing:-.03em}h2{font-size:1.2rem}.muted,small{color:var(--muted)}.grid{display:grid;grid-template-columns:1fr 1.35fr;gap:16px;margin-block:16px}.card{background:white;border:1px solid var(--border);border-radius:14px;padding:20px;min-width:0}.balance{background:#e2f2eb}.money{font-variant-numeric:tabular-nums;white-space:nowrap}.total{font-size:clamp(1.7rem,4vw,2.6rem);font-weight:800;margin-bottom:24px}.pair,.row{display:flex;justify-content:space-between;align-items:baseline;gap:8px 16px;flex-wrap:wrap}.row{border-top:1px solid var(--border);padding:12px 0}.row:last-child{padding-bottom:0}.credit{color:var(--green)}.debit,.error{color:var(--error)}ul{list-style:none;padding:0;margin:0}.bars li{margin-top:12px}.track{height:8px;background:#e2ebe7;border-radius:8px;margin-top:4px}.fill{height:100%;background:var(--green);border-radius:8px}.fields{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-block:16px}label{display:block;font-weight:650}input,select{width:100%;background:white;color:#172b2a;border:1px solid #71847f;border-radius:8px;padding:7px 10px}fieldset{border:0;padding:0;margin:0}legend{font-weight:650}input[type=radio]{width:auto;min-height:auto;accent-color:var(--green)}.radio{display:inline-flex;align-items:center;gap:6px;min-height:44px;margin-right:16px}.form{max-width:720px}.form .fields{grid-template-columns:repeat(2,minmax(0,1fr))}.wide{grid-column:1/-1}.notice{border-left:4px solid var(--green);padding:12px;background:#e2f2eb;margin-block:12px}.notice.error{border-color:var(--error);background:#fff1ef}[aria-invalid=true]{border:2px solid var(--error)}.field-error{display:block;color:var(--error);font-weight:500}
+
+:root{--green:#263b24;--muted:#606b5c;--border:#e4e8df;--error:#a32945;color:#202719;background:#e9ede5;font-family:"Segoe UI",system-ui,sans-serif}
+body{--sidebar-width:208px;--sidebar-inset:12px;--sidebar-radius:24px;margin:0;padding-left:calc(var(--sidebar-width) + var(--sidebar-inset));min-height:100vh;background:#f6f8f2}
+header{position:fixed;inset:var(--sidebar-inset) auto var(--sidebar-inset) var(--sidebar-inset);width:var(--sidebar-width);overflow-y:auto;background:#243523;color:#fff;border:0;border-radius:var(--sidebar-radius)}
+.mast{min-height:100%;display:flex;flex-direction:column;align-items:stretch;gap:35px;padding:29px 18px}
+.skip{z-index:1}
+.mobile-scenario:empty{display:none}
+.brand{display:flex;align-items:center;gap:10px;font-size:1.7rem;letter-spacing:-.06em}.brand:before{content:"";width:28px;height:28px;background:conic-gradient(from 45deg,#c8ef9d 0 25%,#86aa6f 25% 50%,#e2f7ca 50% 75%,#aecf8d 75%);border-radius:9px;transform:rotate(-12deg)}
+nav{display:grid;gap:8px}nav .nav{background:transparent;color:#eff5e9;border-color:transparent;display:flex;align-items:center;gap:10px}nav .nav[aria-current=page],nav .nav:hover{background:#425a3d;color:#fff;border-color:transparent}.nav-icon{width:21px;text-align:center;font-weight:700}
+.test{margin:auto 0 0}.test small{color:#dce8d6}.test select{font-size:.78rem;background:#344a31;color:#fff;border-color:#687f61}
+main.wrap{width:100%;max-width:none;padding:28px clamp(18px,3vw,42px) 36px}.intro{margin-bottom:20px}.intro h1{margin:0;font-size:clamp(1.85rem,3.5vw,2.65rem);line-height:1.1}h2{letter-spacing:-.025em}.intro p{margin:5px 0 0}.primary{display:inline-flex;align-items:center;gap:7px;border-radius:12px;background:#273b24;border-color:#273b24;color:#fff;font-weight:650}.primary:hover{background:#3d5638}.primary:focus-visible{outline-offset:4px}.card{border:1px solid #e3e8dd;border-radius:23px;padding:22px;box-shadow:0 4px 14px #303e2206}
+.grid{grid-template-columns:minmax(0,1.42fr) minmax(0,1fr);margin:0 0 16px;gap:16px}.balance{background:radial-gradient(circle at 95% 12%,#e5f8b8 0 12%,transparent 12.3%),radial-gradient(circle at 95% 12%,#d9f3aa 0 26%,transparent 26.3%),#c9ed98;border-color:#c9ed98;min-height:220px;display:flex;flex-direction:column;justify-content:center}.total{font-size:clamp(2.1rem,5.4vw,4.5rem);line-height:1.06;letter-spacing:-.085em;margin:9px 0 17px}.month-card{background:#eae6fa;border-color:#eae6fa}.month-flow{display:grid;gap:12px;margin-top:14px}.month-flow div{background:#ffffffa6;border-radius:13px;padding:9px 13px}.month-flow small{display:block}.month-flow strong{font-size:1.24rem}
+.lower{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.3fr);gap:16px}.card-head{display:flex;align-items:baseline;justify-content:space-between;gap:10px;flex-wrap:wrap}.card-head a{font-size:.85rem}.chart-area{display:grid;grid-template-columns:112px minmax(0,1fr);align-items:center;gap:15px;margin-top:17px}.donut{width:112px;aspect-ratio:1;border-radius:50%;display:grid;place-items:center}.donut:after{content:"";width:74%;aspect-ratio:1;border-radius:50%;background:white}.bars li{margin:0 0 8px;font-size:.84rem}.category{display:inline-flex;align-items:center;gap:6px}.category:before{content:"";width:9px;height:9px;border-radius:50%;background:var(--accent)}.bars .pair{gap:2px 7px}.row{align-items:center;font-size:.92rem}.row-info{display:flex;align-items:center;gap:11px}.movement{display:grid;place-items:center;width:36px;height:36px;border-radius:11px;background:#f0ebfa;color:#55438a;font-weight:bold}.movement.credit{background:#eaf5da;color:#33592c}.credit{color:#325e2f}.debit{color:#9c3652}
+@media(max-width:1170px){.chart-area{grid-template-columns:1fr}.donut{margin-inline:auto}}
+
+.row-info{flex:1 1 155px;min-width:0}.row-info div{min-width:0;overflow-wrap:anywhere}.movement{flex-shrink:0}
+.balance .total{white-space:normal;overflow-wrap:anywhere}
+.card-head a{display:inline-flex;align-items:center;min-height:44px}
+@media(max-width:890px){
+  body{--sidebar-width:168px}
+  .mast{padding-inline:12px}
+  .grid,.lower{grid-template-columns:minmax(0,1fr)}
+}
+@media(max-width:670px){
+  body{--sidebar-width:60px;--sidebar-inset:6px;--sidebar-radius:18px}
+  .mast{padding:20px 8px;gap:24px}
+  .brand{justify-content:center}
+  .brand-label,.nav-label{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+  nav .nav{justify-content:center;padding:8px;min-width:44px}
+  .nav-icon{font-size:1.15rem}
+  main.wrap{padding:16px 12px 28px}
+  .mobile-scenario{padding:16px 12px 0}
+  .mobile-scenario .test small{color:var(--muted)}
+  .mobile-scenario .test select{background:white;color:#202719}
+  .fields,.form .fields,.chart-area{grid-template-columns:minmax(0,1fr)}
+  .card{padding:16px}
+  .balance{min-height:185px}
+  .money{white-space:normal;overflow-wrap:anywhere}
+  input,select,fieldset{min-width:0}
+}
+
+:root{font-family:"Inter Variable","Segoe UI",system-ui,sans-serif;font-weight:400}
+.intro h1{font-size:1.75rem;font-weight:650}
+.total{font-size:clamp(1.875rem,10vw,2.25rem);font-weight:700;line-height:1.15;letter-spacing:-.04em}
+.money,[name=amount]{font-variant-numeric:tabular-nums}
+.pair>.money,.row>.money{margin-inline-start:auto;text-align:end}
+</style>
+<a class="skip" href="#principal">Pular para o conteúdo</a>
+<header><div class="wrap mast">
+<span class="brand"><span class="brand-label">Clara</span></span>
+<nav aria-label="Navegação principal"><a class="nav" href="#painel" title="Painel"><span class="nav-icon" aria-hidden="true">◈</span><span class="nav-label">Painel</span></a><a class="nav" href="#lancamentos" title="Lançamentos"><span class="nav-icon" aria-hidden="true">☷</span><span class="nav-label">Lançamentos</span></a></nav>
+<label class="test"><small>Cenário do protótipo</small><select id="scenario"><option value="normal">Dados fictícios</option><option value="empty">Sem lançamentos</option><option value="load">Falha de carregamento</option><option value="save">Falha ao salvar</option></select></label>
+</div></header>
+<div class="mobile-scenario"></div>
+<main class="wrap" id="principal" tabindex="-1"></main>
+<script>
+const initial = [
+  {description:'Salário',date:'2026-11-05',type:'Receita',category:'Salário',amount:420000},
+  {description:'Aluguel',date:'2026-11-07',type:'Despesa',category:'Moradia',amount:135000},
+  {description:'Supermercado',date:'2026-11-12',type:'Despesa',category:'Alimentação',amount:38640},
+  {description:'Transporte por aplicativo',date:'2026-11-14',type:'Despesa',category:'Transporte',amount:12850},
+  {description:'Cinema',date:'2026-11-15',type:'Despesa',category:'Lazer',amount:8400}
+];
+const categories = {Receita:['Salário','Outras receitas'],Despesa:['Moradia','Alimentação','Transporte','Lazer','Outras despesas']};
+const currency = new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'});
+const format = cents => currency.format(cents/100);
+const demoDate = '2026-11-17';
+const main = document.querySelector('main');
+const scenario = document.querySelector('#scenario');
+const compactSidebar = window.matchMedia('(max-width: 670px)');
+const scenarioLabel = scenario.closest('label');
+
+function placeScenario(){
+  const container = compactSidebar.matches ? '.mobile-scenario' : '.mast';
+  document.querySelector(container).append(scenarioLabel);
+}
+
+compactSidebar.addEventListener('change', placeScenario);
+placeScenario();
+const filters = {month:'2026-11',type:'',category:''};
+let entries = [...initial];
+let message = '';
+let draft = null;
+const escape = value => String(value).replace(/[&<>"']/g,char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
+const records = () => scenario.value === 'empty' ? [] : entries;
+const newest = items => [...items].reverse().sort((a,b)=>b.date.localeCompare(a.date));
+const rows = items => '<ul>' + newest(items).map(item => {
+  const date = item.date.split('-').reverse().join('/');
+  const expense = item.type === 'Despesa';
+  return '<li class="row"><div class="row-info"><span aria-hidden="true" class="movement '+(expense?'debit':'credit')+'">'+(expense?'↓':'↑')+'</span><div><strong>'+escape(item.description)+'</strong><br><small>'+date+' · '+item.category+' · '+item.type+'</small></div></div><strong class="money '+(expense?'debit':'credit')+'">'+(expense?'−':'+')+format(item.amount)+'</strong></li>';
+}).join('') + '</ul>';
+const add = '<a class="nav primary" href="#novo"><span aria-hidden="true">＋</span>Novo lançamento</a>';
+const first = '<p>Registre uma receita ou despesa para começar.</p>'+add;
+const options = (values,selected) => values.map(value=>'<option'+(value===selected?' selected':'')+'>'+value+'</option>').join('');
+const sum = items => items.reduce((total,item)=>total+item.amount,0);
+
+function dashboard(){
+  const all = records().filter(item => item.date <= demoDate);
+  const month = all.filter(item => item.date.startsWith('2026-11'));
+  const isExpense = item => item.type === 'Despesa';
+  const expenses = month.filter(isExpense);
+  const spent = sum(expenses);
+  const balance = sum(all.filter(item => !isExpense(item))) - sum(all.filter(isExpense));
+  const palette = ['#6c985d','#a99cdb','#a8c87d','#dd9caf','#d6c47a'];
+  const breakdown = categories.Despesa.map(category => ({
+    category, amount: sum(expenses.filter(item => item.category === category))
+  })).filter(item => item.amount > 0).sort((a,b) => b.amount - a.amount);
+  let position = 0;
+  const segments = [];
+  const bars = breakdown.map(({category, amount}, index) => {
+    const color = palette[index];
+    const end = position + amount / spent * 100;
+    segments.push(color + ' ' + position + '% ' + end + '%');
+    position = end;
+    return '<li class="pair"><span class="category" style="--accent:' + color + '">' + category + '</span><strong class="money">' + format(amount) + '</strong></li>';
+  }).join('');
+  const chart = bars ? '<div class="chart-area"><div class="donut" aria-hidden="true" style="background:conic-gradient(' + segments.join(',') + ')"></div><ul class="bars">' + bars + '</ul></div>' : '<p class="muted">Nenhuma despesa em novembro.</p>';
+  return '<div class="grid"><section class="card balance"><h2>Saldo consolidado</h2><p class="money total">' + format(balance) + '</p><p class="muted">Até 17 de novembro de 2026</p></section><section class="card month-card"><h2>Resumo do mês</h2><div class="month-flow"><div><small>↑ Receitas</small><strong class="money credit">' + format(sum(month.filter(item => !isExpense(item)))) + '</strong></div><div><small>↓ Despesas</small><strong class="money debit">' + format(spent) + '</strong></div></div></section></div><div class="lower"><section class="card"><h2>Gastos por categoria</h2><p class="muted">' + format(spent) + ' em despesas</p>' + chart + '</section><section class="card"><div class="card-head"><h2>Lançamentos recentes</h2><a href="#lancamentos">Ver todos →</a></div>' + (all.length ? rows(newest(all).slice(0,4)) : first) + '</section></div>';
+}
+
+function list(){
+  return '<section class="card"><h2>Filtros</h2><div class="fields"><label>Mês<input type="month" id="month" value="'+escape(filters.month)+'"></label><label>Tipo<select id="type"><option value="">Todos</option>'+options(Object.keys(categories),filters.type)+'</select></label><label>Categoria<select id="category"></select></label></div><button id="clear" type="button">Limpar filtros</button></section><section class="card" style="margin-top:16px"><h2>Resultados</h2><p id="count" class="muted" role="status"></p><div id="results"></div></section>';
+}
+function listResults(){
+  document.querySelector('#category').innerHTML='<option value="">Todas</option>'+options(filters.type?categories[filters.type]:Object.values(categories).flat(),filters.category);
+  const items=records().filter(item=>(!filters.month||item.date.startsWith(filters.month))&&(!filters.type||item.type===filters.type)&&(!filters.category||item.category===filters.category));
+  document.querySelector('#count').textContent=items.length===1?'1 lançamento':items.length+' lançamentos';
+  document.querySelector('#results').innerHTML=items.length?rows(items):records().length?'<p>Nenhum lançamento corresponde aos filtros.</p><button type="button" id="clear-empty">Limpar filtros</button>':first;
+  document.querySelector('#clear-empty')?.addEventListener('click',()=>{clearFilters();document.querySelector('#clear').focus();});
+}
+function clearFilters(){
+  Object.assign(filters,{month:'',type:'',category:''});
+  document.querySelector('#month').value='';
+  document.querySelector('#type').value='';
+  listResults();
+}
+function form(){
+  const data=draft??{type:'Despesa',amount:'',date:demoDate,category:'',description:''};
+  return '<form class="card form" novalidate><fieldset><legend>Tipo de lançamento</legend>'+Object.keys(categories).map(type=>'<label class="radio"><input type="radio" name="kind" value="'+type+'" '+(data.type===type?'checked':'')+'>'+type+'</label>').join('')+'</fieldset><div class="fields"><label>Valor (R$)<input name="amount" required inputmode="decimal" placeholder="0,00" value="'+escape(data.amount)+'" aria-describedby="amount-help amount-error"><small id="amount-help">Exemplo: 123,45</small><span class="field-error" id="amount-error"></span></label><label>Data<input name="date" type="date" required value="'+escape(data.date)+'" aria-describedby="date-error"><span class="field-error" id="date-error"></span></label><label class="wide">Categoria<select name="category" required aria-describedby="category-error"><option value="">Selecione</option>'+options(categories[data.type],data.category)+'</select><span class="field-error" id="category-error"></span></label><label class="wide">Descrição (opcional)<input name="description" maxlength="80" value="'+escape(data.description)+'"></label></div><div id="form-status" role="alert"></div><div class="actions"><button class="primary" type="submit">Salvar lançamento</button><a class="nav" id="cancel" href="#lancamentos">Cancelar</a></div></form>';
+}
+function formDraft(element){
+  const data=new FormData(element);
+  return {type:data.get('kind'),amount:data.get('amount'),date:data.get('date'),category:data.get('category'),description:data.get('description')};
+}
+function parseCents(value){
+  const raw=value.trim().replace(/^R\$\s*/,'');
+  if(!/^(?:\d{1,9}|\d{1,3}(?:\.\d{3}){1,2})(?:,\d{1,2})?$/.test(raw)) return 0;
+  const [whole,decimal='']=raw.replaceAll('.','').split(',');
+  return Number(whole)*100+Number(decimal.padEnd(2,'0'));
+}
+function wireForm(){
+  const element=main.querySelector('form');
+  const field=name=>element.elements.namedItem(name);
+  const status=document.querySelector('#form-status');
+  function error(name,text){
+    document.querySelector('#'+name+'-error').textContent=text;
+    if(text) field(name).setAttribute('aria-invalid','true');
+    else field(name).removeAttribute('aria-invalid');
+  }
+  element.addEventListener('change',event=>{
+    if(event.target.name!=='kind') return;
+    field('category').innerHTML='<option value="">Selecione</option>'+options(categories[field('kind').value],'');
+    error('category','');
+  });
+  document.querySelector('#cancel').addEventListener('click',()=>{draft=null;});
+  element.addEventListener('submit',event=>{
+    event.preventDefault();
+    draft=formDraft(element);
+    const cents=parseCents(draft.amount);
+    const errors={amount:cents>0?'':'Informe um valor maior que zero, como 123,45.',date:draft.date&&field('date').validity.valid?'':'Informe uma data válida.',category:categories[draft.type].includes(draft.category)?'':'Selecione uma categoria.'};
+    status.className='';
+    status.textContent='';
+    Object.entries(errors).forEach(([name,value])=>error(name,value));
+    const invalid=Object.keys(errors).find(name=>errors[name]);
+    if(invalid){field(invalid).focus();return;}
+    if(scenario.value==='save'){
+      status.className='notice error';
+      status.textContent='Não foi possível salvar. Seus dados continuam no formulário. Troque o cenário para Dados fictícios e tente novamente.';
+      return;
+    }
+    if(scenario.value==='empty'){entries=[];scenario.value='normal';}
+    entries.push({...draft,description:draft.description.trim()||draft.category,amount:cents});
+    Object.assign(filters,{month:draft.date.slice(0,7),type:'',category:''});
+    draft=null;
+    message='Lançamento salvo.';
+    location.hash='lancamentos';
+  });
+}
+function render(focus){
+  const view=['lancamentos','novo'].includes(location.hash.slice(1))?location.hash.slice(1):'painel';
+  document.querySelectorAll('nav a').forEach(a=>{
+    if(a.hash==='#'+view) a.setAttribute('aria-current','page');else a.removeAttribute('aria-current');
+  });
+  const title={painel:'Painel',lancamentos:'Lançamentos',novo:'Novo lançamento'}[view];
+  main.innerHTML='<div class="intro"><h1 tabindex="-1">'+title+'</h1>'+(view==='novo'?'':add)+'</div>';
+  if(view!=='novo'&&scenario.value==='load'){
+    main.insertAdjacentHTML('beforeend','<section class="card"><p class="error" role="alert">Não foi possível carregar os dados.</p><button id="retry">Tentar novamente</button></section>');
+    document.querySelector('#retry').onclick=()=>{scenario.value='normal';render(true);};
+  }else if(view==='painel'){
+    main.insertAdjacentHTML('beforeend',dashboard());
+    main.querySelector('.card-head a').addEventListener('click',()=>{
+      Object.assign(filters,{month:'',type:'',category:''});
+    });
+  }
+  else if(view==='novo'){main.insertAdjacentHTML('beforeend',form());wireForm();}
+  else{
+    if(message){main.insertAdjacentHTML('beforeend','<p class="notice" role="status">'+message+'</p>');message='';}
+    main.insertAdjacentHTML('beforeend',list());
+    for(const name of ['month','type','category']) document.querySelector('#'+name).addEventListener('change',event=>{
+      filters[name]=event.target.value;
+      if(name==='type') filters.category='';
+      listResults();
+    });
+    document.querySelector('#clear').onclick=clearFilters;
+    listResults();
+  }
+  if(focus) main.querySelector('h1').focus();
+}
+document.querySelector('.skip').addEventListener('click',event=>{event.preventDefault();main.focus();});
+scenario.addEventListener('change',()=>{
+  if(location.hash==='#novo'&&main.querySelector('form')){draft=formDraft(main.querySelector('form'));return;}
+  render(false);
+});
+window.addEventListener('hashchange',()=>render(true));
+render(false);
+</script>
+</html>
