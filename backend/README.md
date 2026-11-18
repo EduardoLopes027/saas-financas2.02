@@ -1,0 +1,65 @@
+﻿# Autenticação local do FinFlow
+
+Na raiz do repositório, rode com Node.js 24. Não há dependências de instalação.
+
+```powershell
+node backend/auth.cjs
+node --test backend/auth.test.cjs backend/transactions.test.cjs
+```
+
+Abra http://127.0.0.1:4174 para carregar o protótipo e a API na mesma origem. Use esse endereço ao integrar as telas. O servidor lê o HTML e os arquivos estáticos existentes. Defina `FINFLOW_AUTH_PORT` para usar outra porta. O SQLite fica em `backend/.local/auth.sqlite`, ignorado pelo Git. Use apenas dados fictícios nesse servidor. Os testes criam bancos temporários e os removem ao terminar.
+
+## Interface para o Front-end
+
+Todas as rotas estão sob `/api/auth`. Envie JSON em todas as requisições POST. As respostas de conta têm o formato `{"user":{"id":1,"email":"pessoa@example.test"}}`.
+
+| Método e rota | Corpo | Sucesso |
+|---|---|---|
+| POST /register | `{ email, password }` | 201 e conta criada. Em seguida, faça login. |
+| POST /login | `{ email, password }` | 200 e conta. O navegador recebe o cookie. |
+| GET /session | — | 200 e conta da sessão. |
+| POST /logout | `{}` | 204. Revoga a sessão e expira o cookie. |
+
+O e-mail é normalizado para minúsculas e sem espaços nas pontas antes da verificação de unicidade. A senha tem pelo menos 15 caracteres no cadastro e aceita até 1.024 bytes. O cookie é HttpOnly e o navegador o envia automaticamente em chamadas de mesma origem. Use `GET /session` na abertura do app para restaurar o estado da sessão. Cada sessão dura até sete dias e o login substitui a sessão que o navegador apresentar.
+
+```js
+const response = await fetch('/api/auth/login', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ email, password }),
+});
+if (response.ok) {
+  const { user } = await response.json();
+  // Atualize a interface com user.
+}
+```
+
+Erros retornam `{"error":"codigo"}`. Trate 400 para entrada inválida, 401 para login inválido ou sessão ausente, 409 para e-mail indisponível e 429 para excesso de tentativas. O 429 inclui `Retry-After`. Um 403 indica host ou origem recusados e um 415 indica corpo com tipo diferente de JSON. O limite local é compartilhado, com 12 tentativas processadas por janela fixa de 15 minutos e até quatro operações de hash simultâneas.
+
+## Lançamentos por conta
+
+| Método e rota | Sucesso |
+|---|---|
+| GET /api/transactions | 200 com `{ "items": [...] }`, do mais recente ao mais antigo por data e, em caso de empate, por ID. Uma conta nova recebe uma lista vazia. |
+| POST /api/transactions | 201 com `{ "item": { ... } }`. Envie JSON na mesma origem. |
+
+Exemplo fictício do corpo de POST:
+
+```json
+{"type":"Despesa","category":"Alimentação","description":"Mercado","amount":3990,"date":"2026-11-10"}
+```
+
+O item contém os mesmos campos e um `id` numérico gerado pelo servidor. `amount` é um inteiro positivo em centavos dentro da faixa segura do JavaScript. `date` é uma data civil válida no formato `AAAA-MM-DD`. A descrição é opcional, tem até 80 caracteres e usa a categoria quando fica em branco. As categorias aceitas seguem o protótipo:
+
+- `Receita` admite `Salário` e `Outras receitas`.
+- `Despesa` admite `Moradia`, `Alimentação`, `Transporte`, `Lazer` e `Outras despesas`.
+
+A sessão identifica a conta em cada consulta e gravação. Campos extras enviados pelo cliente são ignorados. O cookie agora cobre `/api`. Se o navegador só tiver um cookie da versão anterior, faça login novamente para usar os lançamentos. Os dados permanecem no SQLite após reiniciar o servidor.
+
+Erros seguem `{"error":"codigo"}`. Use 400 para `invalid_transaction` ou `invalid_json`, 401 para `unauthenticated`, 403 para origem ou host recusados, 413 para corpo acima de 4 KiB e 415 para POST sem JSON.
+
+## Antes de produção na Vercel
+
+Migre o SQLite local para um banco persistente compartilhado entre instâncias, mantendo unicidade de e-mail e revogação de sessão no banco. Substitua o limite global de desenvolvimento por limites distribuídos por origem e identidade, considerando os proxies confiáveis. Adapte as rotas ao runtime da Vercel e configure HTTPS, cookie Secure e a origem de produção. Defina verificação de e-mail e recuperação de conta antes de aceitar usuários reais.
+
+As senhas usam scrypt com salt aleatório por conta. O banco guarda o hash do identificador de sessão e a validade. O servidor HTTP local se limita ao loopback e só aceita o host configurado. Requisições POST de navegador ficam restritas à mesma origem.

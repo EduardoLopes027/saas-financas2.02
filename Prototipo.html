@@ -1,8 +1,9 @@
 <!doctype html>
 <html lang="pt-BR">
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Clara · Protótipo de finanças pessoais</title>
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>FinFlow · Finanças pessoais</title>
+<link rel="stylesheet" href="./stitch-home.css">
 <style>
 @font-face {
   font-family: "Inter Variable";
@@ -59,15 +60,475 @@ main.wrap{width:100%;max-width:none;padding:28px clamp(18px,3vw,42px) 36px}.intr
 .total{font-size:clamp(1.875rem,10vw,2.25rem);font-weight:700;line-height:1.15;letter-spacing:-.04em}
 .money,[name=amount]{font-variant-numeric:tabular-nums}
 .pair>.money,.row>.money{margin-inline-start:auto;text-align:end}
+.balance,.month-card,.spending-card,.recent-card{color:var(--card-ink);border-color:var(--card-edge)}
+.balance{--card-edge:#cadfad;--card-ink:#263b24;--card-muted:#46563f;--card-accent:#325e2f}
+.month-card,.spending-card,.recent-card{background:var(--card-bg);border-width:2px}
+.month-card{--card-bg:#ded4f5;--card-edge:#927caf;--card-ink:#292437;--card-muted:#544865;--card-accent:#55438a}
+.spending-card{--card-bg:#dce8d6;--card-edge:#7b956f;--card-ink:#263b24;--card-muted:#46563f;--card-accent:#426346}
+.recent-card{--card-bg:#f1e1d0;--card-edge:#a88263;--card-rule:#d6bda6;--card-ink:#332b24;--card-muted:#5e5146;--card-accent:#794c32}
+:is(.balance,.month-card,.spending-card,.recent-card) :is(.muted,small){color:var(--card-muted)}
+.balance h2,.month-card h2,.spending-card h2{color:var(--card-ink)}
+.balance h2::after{content:"";display:block;width:24px;height:2px;margin-top:6px;background:var(--card-accent)}
+.month-flow div{border-inline-start:2px solid var(--card-accent)}
+.recent-card .card-head a{color:var(--card-accent)}
+.recent-card .row{border-color:var(--card-rule)}
+.transactions-card,#results .row{border-color:#778875}
+#results .movement.debit{background:#e1d4f5}
+#results .movement.credit{background:#d4e8b8}
+.recent-card .movement{background:transparent}
+.credit{color:#325e2f}
+.debit{color:#9c3652}
+.donut{position:relative}
+.donut:after{position:relative;background:var(--card-bg)}
+.donut-divider{position:absolute;inset:0 auto auto calc(50% - 1px);width:2px;height:50%;background:var(--card-bg);transform-origin:center bottom;transform:rotate(var(--angle))}
+.home-view{--home-page:#f5f6fc;--home-ink:#101c32;--home-muted:#49536c;--home-blue:#4035c5;--home-soft:#edf0fc;background:var(--home-page);color:var(--home-ink)}
+.home-view header{background:white;color:var(--home-ink);box-shadow:0 8px 22px #101c3210}
+.home-view .test small{color:var(--home-muted)}
+.home-view .test select{background:var(--home-soft);color:var(--home-ink);border-color:#8189a1}
+.home-view nav .nav{color:var(--home-ink);border-radius:100px}
+.home-view nav .nav:hover{background:var(--home-soft)}
+.home-view nav .nav[aria-current=page],.home-view .primary{background:var(--home-blue);border-color:var(--home-blue);color:white}
+.home-view .primary{border-radius:100px}
+.home-view .intro h1{font-size:clamp(1.65rem,3vw,2.45rem);font-weight:700}
+.home-view .intro p,.home-view main small{color:var(--home-muted)}
+.home-actions,.spend-filters{display:flex;align-items:center;flex-wrap:wrap;gap:8px}
+.home-card a:hover{text-decoration:underline}
+.home-grid,.spend-layout{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px}
+.home-card{min-width:0;border-radius:28px;background:white;padding:clamp(16px,2.15vw,30px);box-shadow:0 6px 22px #1a24500b}
+.home-card a{color:var(--home-blue)}
+.home-card h2{font-size:1.25rem;margin:0}
+.home-card .home-kicker{font-size:.79rem;letter-spacing:.05em;text-transform:uppercase;color:var(--home-muted)}
+.home-kicker::before{content:"";display:inline-block;width:8px;height:8px;margin-right:7px;border-radius:50%;background:var(--home-blue)}
+.home-balance,.home-expenses{display:flex;flex-direction:column;gap:14px}
+.home-balance{background:radial-gradient(ellipse at top right,#ece8fd,transparent 65%),white}
+.home-expenses{background:radial-gradient(ellipse at top right,#d7f9eb,transparent 65%),white}
+.home-expenses .home-kicker::before{background:#006749}
+.home-total{font-size:clamp(1.7rem,4vw,3.45rem);line-height:1.1;letter-spacing:-.055em;font-weight:700;white-space:normal;overflow-wrap:anywhere;margin:0}
+.home-summary,.home-ranking,.spend-plot{background:var(--home-soft);border-radius:20px;padding:14px}
+.home-summary{display:flex;flex-wrap:wrap;gap:6px 15px;margin-top:auto;font-size:.84rem}
+.home-summary span{display:block}
+.home-view .credit{color:#006347}
+.home-view .debit{color:#8f254a}
+.home-card + .home-card,.home-spending{margin-top:20px}
+.home-grid .home-card{margin-top:0}
+.home-heading{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;margin-bottom:14px}
+.home-heading p{font-size:.9rem;color:var(--home-muted);margin:4px 0 0}
+.spend-filters button{border-radius:100px;border-color:transparent;background:var(--home-soft);color:var(--home-ink);font-size:.84rem;line-height:1.15}
+.spend-filters button[aria-pressed=true]{background:var(--home-ink);color:white}
+.spend-layout{grid-template-columns:minmax(0,2fr) minmax(0,1fr);gap:14px;align-items:start}
+.spend-plot{background:#f4f6fc;margin:0}
+.spend-plot svg{display:block;width:100%;height:clamp(110px,14vw,185px);overflow:visible}
+.spend-weeks{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:5px;margin-top:6px;text-align:center;font-size:.78rem}
+.spend-weeks strong,.spend-weeks small{display:block;overflow-wrap:anywhere;white-space:normal}
+.home-ranking h3{font-size:.8rem;text-transform:uppercase;letter-spacing:.03em;margin:0 0 10px;color:var(--home-muted)}
+.home-ranking li+li{margin-top:10px}
+.home-ranking .pair{gap:2px 6px;font-size:.84rem}
+.home-ranking .track{background:#dce3f8}
+.home-ranking .fill{background:var(--home-blue)}
+.home-recent .row{border-color:#e0e4ef}
+.home-recent .movement{border-radius:50%;background:#fce7ef}
+.home-recent .movement.credit{background:#cef5e2}
+.home-recent .card-head{margin-bottom:6px}
+@media(max-width:1020px){.spend-layout{grid-template-columns:minmax(0,1fr)}}
+@media(max-width:760px){.home-grid{grid-template-columns:minmax(0,1fr);gap:14px}}
+@media(max-width:400px){.spend-weeks{grid-template-columns:repeat(2,minmax(0,1fr))}.home-actions{gap:6px}.home-card{border-radius:22px}}
+
+@font-face{font-family:"Hanken Grotesk";src:url("./HankenGrotesk.woff2") format("woff2");font-weight:400 700;font-display:swap}
+@font-face{font-family:"Plus Jakarta Sans";src:url("./PlusJakartaSans.woff2") format("woff2");font-weight:400 800;font-display:swap}
+:root{
+  font-family:"Hanken Grotesk","Inter Variable",system-ui,sans-serif;
+  color:#0b1c30;background:#f5f6fc;--green:#3629bd;--muted:#5e6077;--border:#c7c4d7;--error:#92002a;
+  --home-page:#f5f6fc;--home-ink:#0b1c30;--home-muted:#5e6077;--home-blue:#4338ca;--home-soft:#edf2ff;
+}
+body,.home-view{background:var(--home-page);color:var(--home-ink)}
+body{--sidebar-width:clamp(208px,20vw,314px);--sidebar-inset:clamp(12px,2.5vw,40px);--sidebar-radius:40px;padding-left:calc(var(--sidebar-width) + var(--sidebar-inset)*2)}
+header,.home-view header{background:#fff;color:var(--home-ink);box-shadow:0 10px 25px #0f172a0e}
+header{bottom:auto;height:min(calc(100dvh - var(--sidebar-inset)*2),1176px)}
+.mast{padding:25px 20px 20px;gap:32px}
+.brand,h1,h2,.home-total,.spend-weeks strong,.home-ranking strong,.home-recent .money{font-family:"Plus Jakarta Sans","Inter Variable",system-ui,sans-serif}
+.brand{padding-inline:10px;font-size:1.55rem;letter-spacing:-.045em}
+.brand::before{background:conic-gradient(from 45deg,#d9d5ff 0 25%,#8174ec 25% 50%,#4338ca 50% 75%,#a39af7 75%)}
+nav{gap:4px}
+nav .nav,.home-view nav .nav{color:#19172b;border-radius:999px;font-size:1.12rem;padding:10px 20px}
+nav .nav[aria-current=page],.home-view nav .nav[aria-current=page]{background:var(--home-blue);color:white}
+nav .nav:hover,.home-view nav .nav:hover{background:var(--home-soft);color:var(--home-ink)}
+nav .nav[aria-current=page]:hover{background:#3629bd;color:white}
+nav .nav[aria-disabled=true]{opacity:.62;cursor:default}
+nav .nav[aria-disabled=true]:hover{background:transparent}
+.nav-icon{font-family:system-ui,sans-serif}
+.sidebar-tools{display:grid;gap:14px;margin-top:auto}
+.sidebar-quick,.sidebar-profile{background:var(--home-soft);border-radius:32px;padding:14px 16px}
+.sidebar-quick p{margin:0 0 8px;font-size:.8rem}
+.quick-items{display:flex;gap:6px;flex-wrap:wrap}
+.quick-items span{flex:1;background:#fff;border-radius:100px;padding:8px 6px;display:grid;justify-items:center;line-height:1.2;font-size:.78rem;color:var(--home-muted)}
+.quick-items b{font:1.15rem system-ui,sans-serif}
+.sidebar-profile{display:flex;gap:10px;align-items:center}
+.avatar{display:grid;place-items:center;flex:none;width:36px;height:36px;border-radius:50%;background:#dce6ff;color:#30238e;font-weight:700}
+.sidebar-profile strong,.sidebar-profile small{display:block}
+.topbar{display:flex;align-items:center;justify-content:space-between;gap:16px;min-height:78px;padding:5px clamp(18px,1.9vw,30px);background:var(--home-page);box-shadow:0 2px 10px #22284c05}
+.top-search{display:flex;align-items:center;min-width:0;width:354px;padding-inline:10px;border-radius:100px;background:#fff;box-shadow:0 2px 7px #22284c06}
+.top-search button{display:grid;place-items:center;border:0;padding:0;min-width:36px;background:transparent;color:var(--home-muted)}
+.top-search input{background:transparent;border:0;min-width:0;padding:5px 8px}
+.top-tools{display:flex;gap:10px;align-items:center}
+.top-tools .test{margin:0}
+.top-tools .test small{color:var(--home-muted)}
+.top-tools .test select,.home-view .top-tools .test select{border-color:#9492a6;color:var(--home-ink);background:#fff;border-radius:100px}
+.top-profile{display:flex;align-items:center;gap:8px;white-space:nowrap}
+main.wrap{padding:10px clamp(18px,1.9vw,30px) 68px}
+.intro{margin-bottom:32px}
+.intro h1,.home-view .intro h1{font-size:clamp(1.7rem,3vw,2.5rem);font-weight:750;line-height:1.16}
+.intro p{font-size:1.15rem}
+.primary,.home-view .primary{background:var(--home-blue);border-color:var(--home-blue);border-radius:100px;padding-inline:24px;min-height:48px;box-shadow:0 9px 18px #4338ca35}
+.primary:hover,.home-view .primary:hover{background:#3426a8}
+.home-period{display:flex;align-items:center;gap:6px;max-width:100%;padding-inline:12px;border:1px solid #85829c;border-radius:100px;background:white;font-size:.9rem}
+.home-actions{min-width:0;max-width:100%}
+.home-period select{flex:1 1 auto;width:auto;max-width:100%;min-width:0;min-height:46px;padding-inline:7px;border:0;border-radius:100px;font-size:1rem;font-weight:600}
+.home-grid{gap:30px}
+.home-card{padding:30px;border-radius:39px;box-shadow:0 9px 24px #242d5708}
+.home-grid .home-card{min-height:329px;gap:18px}
+.home-balance{background:radial-gradient(ellipse at 91% 5%,#f5f2fd,transparent 60%),white}
+.home-expenses{background:radial-gradient(ellipse at 93% 12%,#d2faeb,transparent 61%),white}
+.home-card .home-kicker{font-size:.87rem;letter-spacing:.035em}
+.home-card h2:not(.home-kicker){font-size:1.5rem;letter-spacing:-.035em}
+.home-card-top{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;min-height:40px}
+.home-total{font-size:clamp(2rem,4vw,3.8rem);letter-spacing:-.045em}
+.currency-prefix{font-family:"Hanken Grotesk",sans-serif;font-size:.43em;color:var(--home-muted);letter-spacing:0;margin-right:4px}
+.recent-count,.home-date-note{background:#dce8ff;border-radius:100px;padding:4px 11px;font-size:.85rem;color:var(--home-ink)}
+.home-summary{min-height:66px;border-radius:32px;align-items:center;padding:14px 20px;font-size:1rem}
+.home-summary a{font-size:.86rem;font-weight:650;text-decoration:none}
+.home-expenses .track{height:12px;background:#dce8ff}
+.home-expenses .fill{background:#006749}
+.home-spending,.home-card+.home-card{margin-top:29px}
+.home-grid .home-card{margin-top:0}
+.home-heading{align-items:center;gap:12px;margin-bottom:30px}
+.home-heading p{font-size:1rem;max-width:465px}
+.spend-filters button{min-height:40px;font-size:1rem;padding-inline:15px}
+.spend-layout{grid-template-columns:minmax(0,2.08fr) minmax(0,1fr);gap:28px;align-items:center}
+.spend-plot,.home-ranking{border-radius:37px;padding:20px}
+.spend-plot svg{height:clamp(125px,14vw,190px)}
+.spend-weeks{font-size:.94rem}
+.home-ranking h3,.spend-weeks small{font-size:.84rem}
+.home-ranking .pair{font-size:1rem}
+.home-ranking .fill{background:var(--chart-color,var(--home-blue))}
+.home-recent .card-head{justify-content:flex-start;align-items:center;margin-bottom:12px}
+.home-recent .card-head a{margin-left:auto;font-size:1rem;text-decoration:none}
+.home-recent .row{border:0;padding:10px 8px;min-height:78px;font-size:1.16rem}
+.home-recent .row-info{gap:20px}
+.home-recent .movement{width:54px;height:54px}
+.home-recent .movement.transport{background:#dce8ff;color:#294372}
+.home-recent .movement.fun{background:#e4dfff;color:#3d2ab3}
+.recent-meta{display:inline-flex;gap:5px 10px;flex-wrap:wrap;align-items:center}
+.recent-tag{display:inline-block;background:#dce8ff;border-radius:100px;padding:1px 9px;color:#172649}
+.recent-tag.credit{background:#bcf5e4}
+.card.transactions-card,.card.form,.state-card{border-radius:32px;border-color:#85829c;background:#fff}
+#results .row{border-color:#8886a5}
+#results .movement.debit{background:#e3dafa}
+#results .movement.credit{background:#d4f1e5}
+input,select,button,.nav{border-color:#85829c;color:var(--home-ink)}
+.primary{color:white;border-color:var(--home-blue)}
+.notice{border-color:var(--home-blue);background:#eeebff}
+.notice.error{border-color:var(--error);background:#fff0f3}
+@media(max-width:1180px){.home-heading{align-items:flex-start}.spend-layout{gap:16px}.home-card{padding:24px}.spend-filters button{font-size:.92rem}}
+@media(max-width:1020px){.spend-layout{grid-template-columns:minmax(0,1fr)}}
+@media(max-width:890px){body{--sidebar-width:168px;--sidebar-inset:12px}.mast{padding-inline:12px}nav .nav,.home-view nav .nav{padding-inline:10px;font-size:1rem}.home-grid{gap:16px}.top-profile strong{display:none}}
+@media(max-width:760px){.home-grid{grid-template-columns:minmax(0,1fr)}.home-grid .home-card{min-height:auto}.intro{margin-bottom:20px}}
+@media(max-width:670px){
+  body{--sidebar-width:60px;--sidebar-inset:6px;--sidebar-radius:18px;padding-left:calc(var(--sidebar-width) + var(--sidebar-inset))}
+  .mast{padding:16px 8px;gap:20px}.brand{padding:0}.sidebar-tools,nav .nav[aria-disabled=true]{display:none}
+  nav .nav,.home-view nav .nav{padding:8px;min-width:44px}
+  .topbar{padding:10px 12px 0;display:grid;min-height:auto;gap:8px}.top-search{width:100%}
+  .top-tools .test{width:100%;min-width:0}.top-profile{display:none}
+  main.wrap{padding:16px 12px 30px}.intro p{font-size:1rem}
+  .home-actions{width:100%}
+  .home-period{width:100%;padding-inline:8px;gap:4px}
+  .home-period select{padding-inline:4px;font-size:.9rem}
+  .home-card,.card.transactions-card,.card.form,.state-card{border-radius:22px;padding:16px}
+  .home-grid .home-card{gap:10px}.home-spending,.home-card+.home-card{margin-top:16px}
+  .home-heading{margin-bottom:14px}.spend-filters button{min-height:44px;padding-inline:10px}
+  .spend-plot,.home-ranking,.home-summary{border-radius:20px;padding:12px}
+  .home-summary,.home-ranking .pair,.spend-weeks{font-size:.83rem}
+  .home-recent .row{padding-inline:0;font-size:.96rem}.home-recent .row-info{gap:8px}
+  .home-recent .movement{width:36px;height:36px}
+  .home-card h2:not(.home-kicker){font-size:1.18rem}
+}
+.account-tools[hidden],.account-mode .demo-scenario,.account-mode .top-profile,.account-mode .sidebar-profile,
+.account-mode .mobile-welcome-avatar,.account-gated .top-search,.account-gated .top-tools,.account-gated .mobile-dock,
+.account-gated > header {display:none!important}
+.account-gated{padding-left:0!important}
+.account-gated .mobile-brand{display:inline-flex;align-items:center;gap:10px;font:750 1.25rem "Plus Jakarta Sans",sans-serif;color:#0b1c30;text-decoration:none}
+.account-gated main.wrap{padding-top:clamp(24px,7vh,78px)}
+.account-card{width:min(100%,460px);margin-inline:auto;padding:clamp(18px,5vw,32px)}
+.account-card h1{font-size:clamp(1.5rem,5vw,2.25rem);line-height:1.15}
+.account-fields{display:grid;gap:12px;margin:18px 0}
+.account-fields small{display:block;margin-top:4px;font-weight:400}
+.account-card .primary{min-width:108px}
+.account-card #auth-status:not(:empty){margin:0 0 12px}
+.account-card .account-switch{margin:16px 0 0}
+.account-tools .account-email{display:block;overflow-wrap:anywhere;margin:0 0 10px}
+.account-tools button{width:100%}
+.account-gated #principal .notice{background:#fff0f3}
+@media(max-width:670px){
+  .account-mode .stitch-greeting{grid-template-columns:minmax(0,1fr) auto}
+  .account-mode .stitch-greeting>div:first-of-type{grid-column:1}
+  .account-mode .stitch-greeting .stitch-add{grid-column:2}
+}
 </style>
 <a class="skip" href="#principal">Pular para o conteúdo</a>
 <header><div class="wrap mast">
-<span class="brand"><span class="brand-label">Clara</span></span>
-<nav aria-label="Navegação principal"><a class="nav" href="#painel" title="Painel"><span class="nav-icon" aria-hidden="true">◈</span><span class="nav-label">Painel</span></a><a class="nav" href="#lancamentos" title="Lançamentos"><span class="nav-icon" aria-hidden="true">☷</span><span class="nav-label">Lançamentos</span></a></nav>
-<label class="test"><small>Cenário do protótipo</small><select id="scenario"><option value="normal">Dados fictícios</option><option value="empty">Sem lançamentos</option><option value="load">Falha de carregamento</option><option value="save">Falha ao salvar</option></select></label>
+<span class="brand"><span class="brand-label">FinFlow</span></span>
+<nav aria-label="Navegação principal">
+  <a class="nav" href="#painel" title="Home"><span class="material-symbols-outlined" aria-hidden="true">grid_view</span><span class="nav-label">Home</span></a>
+  <a class="nav" href="#lancamentos" title="Lançamentos"><span class="material-symbols-outlined" aria-hidden="true">receipt_long</span><span class="nav-label">Lançamentos</span></a>
+  <span class="nav" aria-disabled="true" title="Cartões indisponíveis no protótipo"><span class="material-symbols-outlined" aria-hidden="true">credit_card</span>Cartões</span>
+  <span class="nav" aria-disabled="true" title="Investimentos indisponíveis no protótipo"><span class="material-symbols-outlined" aria-hidden="true">trending_up</span>Investimentos</span>
+  <span class="nav" aria-disabled="true" title="Planejamento indisponível no protótipo"><span class="material-symbols-outlined" aria-hidden="true">account_balance_wallet</span>Planejamento</span>
+</nav>
+<div class="sidebar-tools">
+  <section class="sidebar-quick" aria-label="Ações bancárias indisponíveis">
+    <p>AÇÕES RÁPIDAS <small>· indisponíveis</small></p>
+    <div class="quick-items"><span><i class="material-symbols-outlined" aria-hidden="true">payments</i>Pix</span><span><i class="material-symbols-outlined" aria-hidden="true">sync_alt</i>Transferir</span><span><i class="material-symbols-outlined" aria-hidden="true">qr_code_scanner</i>Pagar</span></div>
+  </section>
+  <div class="sidebar-profile"><img class="avatar" src="./FinFlow-avatar.jpg" alt=""><span><strong>Beatriz</strong><small>Perfil de demonstração</small></span></div>
+</div>
 </div></header>
-<div class="mobile-scenario"></div>
+<div class="topbar">
+<a class="mobile-brand" href="#painel"><span class="material-symbols-outlined" aria-hidden="true">account_balance_wallet</span>FinFlow</a>
+<form class="top-search" id="transaction-search" role="search">
+  <button type="submit" aria-label="Buscar lançamentos"><span class="material-symbols-outlined" aria-hidden="true">search</span></button>
+  <input type="search" id="search-query" aria-label="Buscar por descrição ou categoria" placeholder="Buscar transações, categorias…">
+</form>
+<div class="top-tools">
+<button class="toolbar-icon mobile-search-toggle" type="button" aria-label="Abrir busca" aria-expanded="false" aria-controls="transaction-search"><span class="material-symbols-outlined" aria-hidden="true">search</span></button>
+<button class="toolbar-icon" type="button" disabled aria-label="Notificações indisponíveis" title="Notificações indisponíveis"><span class="material-symbols-outlined" aria-hidden="true">notifications</span></button>
+<details class="toolbar-settings"><summary class="toolbar-icon" aria-label="Configurações do protótipo" title="Configurações do protótipo"><span class="material-symbols-outlined" aria-hidden="true">tune</span></summary>
+<label class="test demo-scenario"><small>Cenário do protótipo</small><select id="scenario"><option value="normal">Dados fictícios</option><option value="empty">Sem lançamentos</option><option value="load">Falha de carregamento</option><option value="save">Falha ao salvar</option></select></label>
+<div class="test account-tools" hidden><strong class="account-email"></strong><button type="button" id="account-logout">Sair da conta</button></div></details>
+<div class="top-profile"><img class="avatar" src="./FinFlow-avatar.jpg" alt=""><strong>Beatriz</strong></div>
+</div></div>
+<nav class="mobile-dock" aria-label="Navegação inferior">
+  <a href="#painel" aria-label="Home"><span class="material-symbols-outlined" aria-hidden="true">grid_view</span></a>
+  <a href="#lancamentos" aria-label="Lançamentos"><span class="material-symbols-outlined" aria-hidden="true">receipt_long</span></a>
+  <button type="button" disabled aria-label="Cartões indisponíveis"><span class="material-symbols-outlined" aria-hidden="true">credit_card</span></button>
+  <button type="button" data-mobile-spending aria-label="Gastos semanais"><span class="material-symbols-outlined" aria-hidden="true">trending_up</span></button>
+  <button type="button" data-mobile-menu aria-label="Configurações do protótipo"><span class="material-symbols-outlined" aria-hidden="true">tune</span></button>
+</nav>
 <main class="wrap" id="principal" tabindex="-1"></main>
+<!-- Home e gráfico adaptados diretamente do code.html exportado pelo Stitch. -->
+<template id="stitch-home">
+<div class="flex flex-col w-full gap-space-lg pb-space-xl stitch-dashboard">
+<!-- Top Greeting & Header Bar -->
+<div class="flex flex-col md:flex-row md:items-center justify-between gap-space-md pt-space-xs stitch-greeting">
+<img class="mobile-welcome-avatar" src="./FinFlow-avatar.jpg" alt="">
+<div class="flex flex-col gap-1">
+<div class="flex items-center gap-space-xs">
+<h1 tabindex="-1" class="font-headline-lg text-headline-lg text-on-surface font-bold tracking-tight">Olá, Beatriz</h1>
+<span aria-hidden="true" class="text-2xl">👋</span>
+</div>
+<p data-stitch="intro" class="font-body-md text-body-md text-on-surface-variant"></p>
+<p class="mobile-intro-copy">Aqui está o resumo do seu mês</p>
+</div>
+<!-- Actions: Period Filter & Add Entry -->
+<div class="flex items-center flex-wrap gap-space-sm stitch-actions">
+<label class="inline-flex items-center gap-2 px-space-md py-2.5 bg-surface-container-lowest rounded-full shadow-[0_2px_8px_rgba(15,23,42,0.04)] text-on-surface hover:bg-surface-container-low transition-colors cursor-pointer select-none stitch-period"><span aria-hidden="true" class="material-symbols-outlined text-[18px] text-primary">calendar_today</span><select id="home-month" aria-label="Mês"></select></label>
+<a href="#novo" aria-label="Novo lançamento" class="inline-flex items-center gap-2 px-space-lg py-2.5 bg-primary-container text-on-primary rounded-full font-headline-md text-body-sm font-semibold shadow-[0_8px_20px_-4px_rgba(67,56,202,0.35)] hover:bg-primary transition-all active:scale-[0.98] select-none stitch-add">
+<span aria-hidden="true" class="material-symbols-outlined text-[20px]">add</span>
+<span class="stitch-add-long">Novo Lançamento</span><span class="stitch-add-short">Novo</span>
+</a>
+</div>
+</div>
+<!-- Key Metrics Row: 2 Prominent Cards -->
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-space-lg stitch-metrics">
+<!-- Card 1: Saldo Atual -->
+<div class="relative overflow-hidden bg-surface-container-lowest rounded-lg p-space-lg shadow-[0_4px_24px_-4px_rgba(15,23,42,0.05),0_2px_8px_-2px_rgba(15,23,42,0.03)] flex flex-col justify-between transition-all hover:shadow-[0_8px_30px_-4px_rgba(15,23,42,0.08)] stitch-card stitch-balance">
+<!-- Ambient Glow Behind Balance -->
+<div class="absolute -top-12 -right-12 w-48 h-48 bg-primary-fixed/30 rounded-full blur-3xl pointer-events-none"></div>
+<div class="flex flex-col gap-space-md relative z-10">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-space-xs">
+<span class="w-2 h-2 rounded-full bg-primary-container"></span>
+<span class="font-label-caps text-label-caps uppercase tracking-wider text-outline">Saldo total disponível</span>
+</div>
+<button aria-pressed="false" aria-label="Ocultar saldo" class="w-8 h-8 rounded-full flex items-center justify-center text-outline hover:text-on-surface hover:bg-surface-container transition-colors" id="toggleSaldoBtn" title="Ocultar Saldo" type="button">
+<span aria-hidden="true" class="material-symbols-outlined text-[19px]" id="toggleSaldoIcon">visibility</span>
+</button>
+</div>
+<div class="flex flex-col sm:flex-row sm:items-baseline gap-space-sm sm:gap-space-md">
+<div class="flex items-baseline gap-1.5 stitch-value">
+<span data-prefix="" class="font-headline-md text-headline-md text-outline font-semibold">R$</span>
+<span data-stitch="balance" class="font-display-hero text-display-hero font-bold text-on-surface tracking-tight" id="saldoValue"></span>
+</div>
+<div data-stitch="balance-badge" class="inline-flex items-center gap-1 px-3 py-1 bg-secondary-container/40 text-on-secondary-container rounded-full self-start"></div>
+</div>
+</div>
+<!-- Micro breakdown metrics -->
+<div class="mt-space-lg pt-space-md bg-surface-container-low rounded-xl px-space-md py-space-sm flex flex-wrap items-center justify-between gap-space-sm relative z-10 stitch-summary">
+<div class="flex items-center gap-space-xs">
+<span class="w-2.5 h-2.5 rounded-full bg-secondary"></span>
+<span class="font-body-sm text-body-sm text-on-surface-variant">Receitas:</span>
+<span data-stitch="income" class="font-headline-md text-body-sm font-bold text-on-surface"></span>
+</div>
+<div class="h-4 w-px bg-outline-variant hidden sm:block"></div>
+<div class="flex items-center gap-space-xs">
+<span class="w-2.5 h-2.5 rounded-full bg-tertiary"></span>
+<span class="font-body-sm text-body-sm text-on-surface-variant">Despesas:</span>
+<span data-stitch="spent-summary" class="font-headline-md text-body-sm font-bold text-on-surface"></span>
+</div>
+<div class="h-4 w-px bg-outline-variant hidden sm:block"></div>
+<a data-stitch-link="month" data-list-month="" href="#lancamentos" class="flex items-center gap-1 text-primary cursor-pointer hover:underline">
+<span class="font-label-caps text-label-caps uppercase tracking-wider font-bold">Detalhes</span>
+<span aria-hidden="true" class="material-symbols-outlined text-[15px]">arrow_forward</span>
+</a>
+</div>
+</div>
+<!-- Card 2: Saldo até o Próximo Salário -->
+<div class="relative overflow-hidden bg-surface-container-lowest rounded-lg p-space-lg shadow-[0_4px_24px_-4px_rgba(15,23,42,0.05),0_2px_8px_-2px_rgba(15,23,42,0.03)] flex flex-col justify-between transition-all hover:shadow-[0_8px_30px_-4px_rgba(15,23,42,0.08)] stitch-card stitch-expense">
+<!-- Subtle Decorative Accent -->
+<div class="absolute -top-10 -right-10 w-44 h-44 bg-secondary-fixed/40 rounded-full blur-3xl pointer-events-none"></div>
+<div class="flex flex-col gap-space-md relative z-10">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-space-xs">
+<span class="w-2 h-2 rounded-full bg-secondary"></span>
+<span class="font-label-caps text-label-caps uppercase tracking-wider text-outline">Até o próximo salário</span>
+</div>
+<span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-surface-container-high font-body-sm text-body-sm font-semibold text-on-surface"><span aria-hidden="true" class="material-symbols-outlined text-[16px] text-primary">schedule</span><span data-stitch="salary-period"></span><span class="mobile-salary-period" data-stitch="mobile-salary-period"></span></span>
+</div>
+<div class="flex items-baseline gap-1.5 stitch-value">
+<span data-stitch="salary-prefix" class="font-headline-md text-headline-md text-outline font-semibold">R$</span>
+<span data-stitch="salary-balance" class="font-display-hero text-display-hero font-bold text-on-surface tracking-tight"></span>
+</div>
+<p data-stitch="salary-note" class="font-body-sm text-body-sm text-on-surface-variant"></p>
+</div>
+<!-- Daily quota info badge -->
+<div class="mt-space-md pt-space-sm bg-surface-container-low rounded-xl px-space-md py-space-sm flex items-center justify-between relative z-10 stitch-summary">
+<div class="flex items-center gap-2">
+<span aria-hidden="true" class="material-symbols-outlined text-secondary text-[20px]">check_circle</span>
+<div class="flex flex-col">
+<span data-stitch="daily" class="font-body-sm text-body-sm font-bold text-on-surface"></span>
+<span data-stitch="salary-daily-note" class="font-label-caps text-label-caps text-on-surface-variant"></span>
+</div>
+</div>
+<span data-stitch="salary-status" class="px-2.5 py-0.5 rounded-full bg-secondary-container/50 text-on-secondary-container font-label-caps text-label-caps uppercase font-bold tracking-wide"></span>
+</div>
+</div>
+</div>
+<!-- Middle Section: Analytics & Spending Breakdown (Gastos) -->
+<section class="mobile-quick" aria-labelledby="mobile-quick-label">
+<div class="mobile-quick-head"><h2 id="mobile-quick-label">Ações rápidas</h2><small>Deslize para ver mais</small></div>
+<div class="mobile-quick-strip">
+<a class="mobile-quick-primary" href="#novo"><span class="material-symbols-outlined" aria-hidden="true">add</span>Novo</a>
+<a href="#lancamentos" data-list-month=""><span class="material-symbols-outlined" aria-hidden="true">receipt_long</span>Extrato</a>
+<button type="button" data-mobile-spending><span class="material-symbols-outlined" aria-hidden="true">trending_up</span>Gastos</button>
+<button type="button" disabled aria-label="Pix indisponível"><span class="material-symbols-outlined" aria-hidden="true">payments</span>Pix</button>
+<button type="button" disabled aria-label="Transferir indisponível"><span class="material-symbols-outlined" aria-hidden="true">sync_alt</span>Transferir</button>
+<button type="button" disabled aria-label="Cartões indisponíveis"><span class="material-symbols-outlined" aria-hidden="true">credit_card</span>Cartões</button>
+</div>
+</section>
+<div class="bg-surface-container-lowest rounded-lg p-space-lg shadow-[0_4px_24px_-4px_rgba(15,23,42,0.05),0_2px_8px_-2px_rgba(15,23,42,0.03)] flex flex-col gap-space-lg stitch-card stitch-spending">
+<!-- Header of Section -->
+<div class="flex flex-col md:flex-row md:items-center justify-between gap-space-md stitch-spending-head">
+<div class="flex flex-col gap-0.5">
+<div class="flex items-center gap-space-xs">
+<h2 class="font-headline-lg text-headline-md font-bold text-on-surface tracking-tight"><span class="stitch-desktop-title">Gastos</span><span class="stitch-mobile-title">Gastos Semanais</span></h2>
+<span data-stitch="analysis-badge" class="inline-flex items-center px-2 py-0.5 rounded-full bg-secondary-container/40 text-on-secondary-container font-label-caps text-label-caps font-bold"></span>
+</div>
+<p data-stitch="analysis-copy" class="font-body-sm text-body-sm text-on-surface-variant"></p>
+<p class="mobile-chart-total">Total gasto: <strong data-stitch="mobile-spent"></strong></p>
+</div>
+<!-- Categories Pills Selector -->
+<div aria-label="Categoria dos gastos" role="group" class="flex items-center gap-1.5 pb-1 max-w-full stitch-pills flex-wrap">
+<button aria-pressed="true" data-spend-category="" class="category-pill px-3.5 py-1.5 rounded-full font-headline-md text-body-sm font-semibold transition-all" type="button">Todos</button>
+<button aria-pressed="false" data-spend-category="Alimentação" class="category-pill px-3.5 py-1.5 rounded-full font-headline-md text-body-sm font-semibold transition-all hover:bg-surface-container hover:text-on-surface" type="button">Alimentação</button>
+<button aria-pressed="false" data-spend-category="Moradia" class="category-pill px-3.5 py-1.5 rounded-full font-headline-md text-body-sm font-semibold transition-all hover:bg-surface-container hover:text-on-surface" type="button">Moradia</button>
+<button aria-pressed="false" data-spend-category="Transporte" class="category-pill px-3.5 py-1.5 rounded-full font-headline-md text-body-sm font-semibold transition-all hover:bg-surface-container hover:text-on-surface" type="button">Transporte</button>
+<button aria-pressed="false" data-spend-category="Lazer" class="category-pill px-3.5 py-1.5 rounded-full font-headline-md text-body-sm font-semibold transition-all hover:bg-surface-container hover:text-on-surface" type="button">Lazer</button>
+<button aria-pressed="false" data-spend-category="Outras despesas" class="category-pill px-3.5 py-1.5 rounded-full font-headline-md text-body-sm font-semibold transition-all hover:bg-surface-container hover:text-on-surface" type="button">Outros</button>
+</div>
+</div>
+<!-- Chart Canvas / Visualization Block -->
+<div aria-live="polite" data-stitch="chart" class="spend-data"></div>
+</div>
+<!-- Bottom Section: Lançamentos Recentes -->
+<div class="bg-surface-container-lowest rounded-lg p-space-lg shadow-[0_4px_24px_-4px_rgba(15,23,42,0.05),0_2px_8px_-2px_rgba(15,23,42,0.03)] flex flex-col gap-space-md stitch-card home-recent">
+<!-- Header of Transactions -->
+<div class="flex items-center justify-between stitch-recent-head">
+<div class="flex items-center gap-space-sm">
+<h2 class="font-headline-lg text-headline-md font-bold text-on-surface tracking-tight">Lançamentos Recentes</h2>
+<span data-stitch="recent-count" class="px-2.5 py-0.5 bg-surface-container-high text-on-surface rounded-full font-label-caps text-label-caps font-bold"></span>
+</div>
+<a data-list-month="" class="inline-flex items-center gap-1 font-headline-md text-body-sm font-semibold text-primary hover:text-on-primary-fixed-variant transition-colors group" href="#lancamentos">
+<span>Ver todos</span>
+<span aria-hidden="true" class="material-symbols-outlined text-[18px] group-hover:translate-x-0.5 transition-transform">arrow_forward</span>
+</a>
+</div>
+<!-- Transaction List -->
+<div data-stitch="recent-rows" class="flex flex-col gap-space-xs divide-y-0"></div>
+</div>
+</div>
+</template>
+<template id="stitch-chart">
+<div class="grid grid-cols-1 lg:grid-cols-12 gap-space-lg items-center stitch-chart">
+<!-- Main Visual Weekly Evolution Chart -->
+<div class="lg:col-span-8 flex flex-col gap-space-md">
+<!-- SVG Interactive Area / Curved Flow Chart -->
+<div class="relative w-full h-56 bg-surface-container-low/50 rounded-lg p-space-md flex flex-col justify-between overflow-hidden stitch-figure">
+<!-- Background Gridlines -->
+<div class="absolute inset-x-space-md top-10 h-px bg-outline-variant/30"></div>
+<div class="absolute inset-x-space-md top-24 h-px bg-outline-variant/30"></div>
+<div class="absolute inset-x-space-md top-38 h-px bg-outline-variant/30"></div>
+<!-- Inline Smooth Sparkline SVG Area -->
+<svg preserveAspectRatio="none" viewBox="0 0 500 140" aria-hidden="true" class="w-full h-40 overflow-visible relative z-10" fill="none">
+<defs>
+<lineargradient id="chartGradient" x1="0" x2="0" y1="0" y2="1">
+<stop offset="0%" stop-color="#4338ca" stop-opacity="0.32" />
+<stop offset="100%" stop-color="#4338ca" stop-opacity="0.0" />
+</lineargradient>
+</defs>
+<!-- Gradient Area -->
+<path data-stitch="area" d="M 30,85 C 90,85 110,35 170,35 C 230,35 250,95 310,95 C 370,95 400,105 470,105 L 470,140 L 30,140 Z" fill="url(#chartGradient)" />
+<!-- Line Curve -->
+<path data-stitch="line" d="M 30,85 C 90,85 110,35 170,35 C 230,35 250,95 310,95 C 370,95 400,105 470,105" stroke="#4338ca" stroke-linecap="round" stroke-width="3" />
+<!-- Interactive Points -->
+<!-- Week 1: 850 -->
+<circle data-point="0" class="fill-surface-container-lowest stroke-primary stroke-[3] hover:scale-125 transition-transform" cx="30" cy="85" r="4.5" />
+<!-- Week 2: 1.120 (Peak) -->
+<circle data-point="1" class="fill-surface-container-lowest stroke-primary stroke-[3.5] hover:scale-125 transition-transform" cx="170" cy="35" r="6" />
+<!-- Week 3: 740 -->
+<circle data-point="2" class="fill-surface-container-lowest stroke-primary stroke-[3] hover:scale-125 transition-transform" cx="310" cy="95" r="4.5" />
+<!-- Week 4: 640 -->
+<circle data-point="3" class="fill-surface-container-lowest stroke-primary stroke-[3] hover:scale-125 transition-transform" cx="470" cy="105" r="4.5" />
+</svg>
+<!-- X-Axis Labels with values -->
+<div data-week-labels="" class="grid grid-cols-4 w-full pt-space-xs text-center z-20">
+<div class="flex flex-col items-center">
+<span class="font-headline-md text-body-sm font-bold text-on-surface">R$ 850</span>
+<span class="font-label-caps text-label-caps text-outline uppercase tracking-wider">Sem 1 (1-7)</span>
+</div>
+<div class="flex flex-col items-center">
+<span class="font-headline-md text-body-sm font-bold text-primary">R$ 1.120</span>
+<span class="font-label-caps text-label-caps text-primary uppercase tracking-wider font-bold">Sem 2 (8-14)</span>
+</div>
+<div class="flex flex-col items-center">
+<span class="font-headline-md text-body-sm font-bold text-on-surface">R$ 740</span>
+<span class="font-label-caps text-label-caps text-outline uppercase tracking-wider">Sem 3 (15-21)</span>
+</div>
+<div class="flex flex-col items-center">
+<span class="font-headline-md text-body-sm font-bold text-on-surface">R$ 640</span>
+<span class="font-label-caps text-label-caps text-outline uppercase tracking-wider">Sem 4 (22-30)</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Lateral Categorical Distribution Breakdown -->
+<div class="lg:col-span-4 flex flex-col gap-space-sm bg-surface-container-low rounded-lg p-space-md stitch-ranking">
+<span class="font-label-caps text-label-caps uppercase tracking-wider text-outline">Maiores concentrações</span>
+<div data-stitch="ranking" class="flex flex-col gap-space-sm"></div>
+<div class="pt-2 flex items-center justify-between text-body-sm text-outline">
+<span class="text-xs">Média diária no mês</span>
+<span data-stitch="ranking-daily" class="font-headline-md text-body-sm font-semibold text-on-surface"></span>
+</div>
+</div>
+</div>
+</template>
 <script>
 const initial = [
   {description:'Salário',date:'2026-11-05',type:'Receita',category:'Salário',amount:420000},
@@ -80,77 +541,261 @@ const categories = {Receita:['Salário','Outras receitas'],Despesa:['Moradia','A
 const currency = new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'});
 const format = cents => currency.format(cents/100);
 const demoDate = '2026-11-17';
+const demoMonth = demoDate.slice(0,7);
+const referenceYearMonths = Array.from({length:12}, (_, index) =>
+  demoMonth.slice(0,4) + '-' + String(index + 1).padStart(2,'0')
+);
+const monthLabel = new Intl.DateTimeFormat('pt-BR',{month:'long',year:'numeric',timeZone:'UTC'});
+const formatMonth = month => monthLabel.format(new Date(month + '-01T00:00:00Z'));
 const main = document.querySelector('main');
 const scenario = document.querySelector('#scenario');
-const compactSidebar = window.matchMedia('(max-width: 670px)');
-const scenarioLabel = scenario.closest('label');
-
-function placeScenario(){
-  const container = compactSidebar.matches ? '.mobile-scenario' : '.mast';
-  document.querySelector(container).append(scenarioLabel);
-}
-
-compactSidebar.addEventListener('change', placeScenario);
-placeScenario();
-const filters = {month:'2026-11',type:'',category:''};
-let entries = [...initial];
+const filters = {month:demoMonth,type:'',category:''};
+let homeMonth = demoMonth;
+let balanceHidden = false;
+const search = document.querySelector('#search-query');
+let query = '';
+const searchKey = value => value.normalize('NFD').replace(/\p{M}/gu,'').toLocaleLowerCase('pt-BR').trim();
+let appMode = location.hostname === '127.0.0.1' ? 'checking' : 'demo';
+let entries = appMode === 'demo' ? [...initial] : [];
+let accountUser = null;
+let accountEpoch = 0;
+let accountState = 'idle';
+let authBusy = false;
+let saveBusy = false;
+let sessionProblem = false;
+let logoutProblem = false;
+let authNotice = '';
 let message = '';
 let draft = null;
 const escape = value => String(value).replace(/[&<>"']/g,char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
-const records = () => scenario.value === 'empty' ? [] : entries;
+const records = () => appMode === 'demo' && scenario.value === 'empty' ? [] : entries;
 const newest = items => [...items].reverse().sort((a,b)=>b.date.localeCompare(a.date));
-const rows = items => '<ul>' + newest(items).map(item => {
+const rows = (items, recent = false) => '<ul>' + newest(items).map(item => {
   const date = item.date.split('-').reverse().join('/');
   const expense = item.type === 'Despesa';
-  return '<li class="row"><div class="row-info"><span aria-hidden="true" class="movement '+(expense?'debit':'credit')+'">'+(expense?'↓':'↑')+'</span><div><strong>'+escape(item.description)+'</strong><br><small>'+date+' · '+item.category+' · '+item.type+'</small></div></div><strong class="money '+(expense?'debit':'credit')+'">'+(expense?'−':'+')+format(item.amount)+'</strong></li>';
+  const tone = expense ? 'debit' : 'credit';
+  const iconTone = recent && item.category === 'Transporte' ? ' transport' : recent && item.category === 'Lazer' ? ' fun' : '';
+  const icon = recent ? '<span class="material-symbols-outlined">' + ({
+    Salário:'account_balance', Moradia:'account_balance_wallet', Alimentação:'shopping_basket',
+    Transporte:'local_taxi', Lazer:'subscriptions'
+  }[item.category] ?? 'payments') + '</span>' : expense ? '↓' : '↑';
+  const metadata = recent
+    ? '<small class="recent-meta"><span class="recent-tag ' + tone + '">' + item.category + '</span><span>' + date + '</span></small>'
+    : '<small>' + date + ' · ' + item.category + ' · ' + item.type + '</small>';
+  const amount = '<strong class="money '+tone+'">'+(expense?'−':'+')+format(item.amount)+'</strong>';
+  return '<li class="row"><div class="row-info"><span aria-hidden="true" class="movement '+tone+iconTone+'">'+icon+'</span><div><strong>'+escape(item.description)+'</strong><br>'+metadata+'</div></div>'
+    + (recent ? '<div class="recent-amount">' + amount + '<small>' + item.type + '</small></div>' : amount) + '</li>';
 }).join('') + '</ul>';
 const add = '<a class="nav primary" href="#novo"><span aria-hidden="true">＋</span>Novo lançamento</a>';
 const first = '<p>Registre uma receita ou despesa para começar.</p>'+add;
 const options = (values,selected) => values.map(value=>'<option'+(value===selected?' selected':'')+'>'+value+'</option>').join('');
 const sum = items => items.reduce((total,item)=>total+item.amount,0);
 
-function dashboard(){
-  const all = records().filter(item => item.date <= demoDate);
-  const month = all.filter(item => item.date.startsWith('2026-11'));
-  const isExpense = item => item.type === 'Despesa';
-  const expenses = month.filter(isExpense);
-  const spent = sum(expenses);
-  const balance = sum(all.filter(item => !isExpense(item))) - sum(all.filter(isExpense));
-  const palette = ['#6c985d','#a99cdb','#a8c87d','#dd9caf','#d6c47a'];
-  const breakdown = categories.Despesa.map(category => ({
-    category, amount: sum(expenses.filter(item => item.category === category))
+const stitchSlot = (root,name) => root.querySelector('[data-stitch="' + name + '"]');
+const stitchTemplate = name => document.querySelector('#stitch-' + name).content.cloneNode(true);
+
+function homeSpending(expenses, category, days){
+  const visible = category ? expenses.filter(item => item.category === category) : expenses;
+  const total = sum(visible);
+  if(!total){
+    const empty = document.createElement('p');
+    empty.className = 'stitch-empty';
+    empty.textContent = category ? 'Nenhuma despesa em ' + category + ' neste mês.' : 'Nenhuma despesa neste mês.';
+    return empty;
+  }
+
+  const chart = stitchTemplate('chart');
+  const weeks = [[1,7],[8,14],[15,21],[22,days]].map(([start,end]) => ({
+    start, end, amount: sum(visible.filter(item => {
+      const day = Number(item.date.slice(-2));
+      return day >= start && day <= end;
+    }))
+  }));
+  const peak = Math.max(...weeks.map(week => week.amount));
+  const coordinates = [30,170,310,470];
+  const points = weeks.map(({amount}, index) => [coordinates[index], 125 - amount / peak * 90]);
+  const path = points.reduce((line,[x,y],index) => {
+    if(index === 0) return 'M' + x + ',' + y;
+    const [lastX,lastY] = points[index-1];
+    const approach = Math.round((x - lastX) * .43);
+    return line + ' C' + (lastX + approach) + ',' + lastY + ' ' + (x - approach) + ',' + y + ' ' + x + ',' + y;
+  },'');
+  stitchSlot(chart,'line').setAttribute('d',path);
+  stitchSlot(chart,'area').setAttribute('d',path + ' L470,140 H30 Z');
+  const labels = chart.querySelector('[data-week-labels]').children;
+  chart.querySelectorAll('[data-point]').forEach((point,index)=>{
+    const [x,y] = points[index];
+    point.setAttribute('cx',x);
+    point.setAttribute('cy',y);
+    point.setAttribute('r',weeks[index].amount === peak ? '6' : '4.5');
+    labels[index].firstElementChild.classList.remove('text-primary');
+    labels[index].lastElementChild.classList.remove('text-primary');
+    labels[index].firstElementChild.classList.toggle('stitch-peak', weeks[index].amount === peak);
+    labels[index].lastElementChild.classList.toggle('stitch-peak', weeks[index].amount === peak);
+    labels[index].firstElementChild.textContent = format(weeks[index].amount);
+    labels[index].lastElementChild.textContent = 'Sem ' + (index + 1) + ' (' + weeks[index].start + '–' + weeks[index].end + ')';
+  });
+
+  const ranking = categories.Despesa.map(name => ({
+    name, amount: sum(visible.filter(item => item.category === name))
   })).filter(item => item.amount > 0).sort((a,b) => b.amount - a.amount);
-  let position = 0;
-  const segments = [];
-  const bars = breakdown.map(({category, amount}, index) => {
-    const color = palette[index];
-    const end = position + amount / spent * 100;
-    segments.push(color + ' ' + position + '% ' + end + '%');
-    position = end;
-    return '<li class="pair"><span class="category" style="--accent:' + color + '">' + category + '</span><strong class="money">' + format(amount) + '</strong></li>';
+  const colors = ['#4338ca','#006c49','#777586'];
+  stitchSlot(chart,'ranking').innerHTML = ranking.map(({name,amount},index) => {
+    const share = Math.round(amount / total * 100);
+    return '<div class="stitch-rank-row" style="--rank-color:' + colors[index % colors.length] + '"><div><span>' + name + '</span><strong class="money">' + format(amount) + ' (' + share + '%)</strong><span class="mobile-rank-share">' + share + '%</span></div>'
+      + '<div class="stitch-rank-track" aria-hidden="true"><span style="width:' + share + '%;background:' + colors[index % colors.length] + '"></span></div></div>';
   }).join('');
-  const chart = bars ? '<div class="chart-area"><div class="donut" aria-hidden="true" style="background:conic-gradient(' + segments.join(',') + ')"></div><ul class="bars">' + bars + '</ul></div>' : '<p class="muted">Nenhuma despesa em novembro.</p>';
-  return '<div class="grid"><section class="card balance"><h2>Saldo consolidado</h2><p class="money total">' + format(balance) + '</p><p class="muted">Até 17 de novembro de 2026</p></section><section class="card month-card"><h2>Resumo do mês</h2><div class="month-flow"><div><small>↑ Receitas</small><strong class="money credit">' + format(sum(month.filter(item => !isExpense(item)))) + '</strong></div><div><small>↓ Despesas</small><strong class="money debit">' + format(spent) + '</strong></div></div></section></div><div class="lower"><section class="card"><h2>Gastos por categoria</h2><p class="muted">' + format(spent) + ' em despesas</p>' + chart + '</section><section class="card"><div class="card-head"><h2>Lançamentos recentes</h2><a href="#lancamentos">Ver todos →</a></div>' + (all.length ? rows(newest(all).slice(0,4)) : first) + '</section></div>';
+  stitchSlot(chart,'ranking-daily').textContent = format(Math.round(total / days)) + '/dia';
+  return chart;
+}
+
+function salaryForecast(items, reference){
+  const salaries = items.filter(item => item.type === 'Receita' && item.category === 'Salário');
+  const dates = salaries.map(item => item.date).sort();
+  let date = dates.find(value => value >= reference);
+  const estimated = !date;
+  if(estimated){
+    const last = dates.at(-1);
+    if(!last) return null;
+    const [year, month, day] = last.split('-').map(Number);
+    // Preserve the original day across short months and skip elapsed estimates.
+    const [referenceYear, referenceMonth] = reference.split('-').map(Number);
+    const earliest = Math.max(year * 12 + month, referenceYear * 12 + referenceMonth - 1);
+    const estimate = offset => {
+      const targetYear = Math.floor(offset / 12);
+      const targetMonth = offset % 12 + 1;
+      const end = new Date(Date.UTC(targetYear,targetMonth,0)).getUTCDate();
+      return new Date(Date.UTC(targetYear,targetMonth-1,Math.min(day,end))).toISOString().slice(0,10);
+    };
+    date = estimate(earliest);
+    if(date < reference) date = estimate(earliest + 1);
+  }
+  const before = items.filter(item => item.date < date);
+  const balance = sum(before.filter(item=>item.type==='Receita')) - sum(before.filter(item=>item.type==='Despesa'));
+  const days = (Date.parse(date) - Date.parse(reference)) / 86400000;
+  return {date, estimated, balance, days, daily:days ? Math.floor(Math.max(0,balance) / days) : null};
+}
+
+const salaryDateLabel = new Intl.DateTimeFormat('pt-BR',{day:'numeric',month:'short',year:'numeric',timeZone:'UTC'});
+
+function localCalendarDate(now = new Date()){
+  return [now.getFullYear(),now.getMonth()+1,now.getDate()]
+    .map((part,index)=>String(part).padStart(index===0?4:2,'0')).join('-');
+}
+
+function mountHome(showDashboard){
+  const home = stitchTemplate('home');
+  if(accountUser) home.querySelector('h1').textContent='Visão da conta';
+  const monthText = formatMonth(homeMonth);
+  const monthSelect = home.querySelector('#home-month');
+  monthSelect.innerHTML = monthOptions(homeMonth,{baseMonths:referenceYearMonths});
+  stitchSlot(home,'intro').textContent = 'Aqui está o resumo financeiro do seu mês de ' + monthText + '.';
+  if(!showDashboard){
+    home.querySelectorAll('.stitch-metrics,.mobile-quick,.stitch-spending,.home-recent').forEach(node=>node.remove());
+    main.replaceChildren(home);
+    return;
+  }
+
+  const items = records();
+  const today = localCalendarDate();
+  const month = items.filter(item => item.date.slice(0,7) === homeMonth);
+  const throughToday = items.filter(item => item.date <= today);
+  const income = sum(throughToday.filter(item => item.type === 'Receita'));
+  const spentThroughToday = sum(throughToday.filter(item => item.type === 'Despesa'));
+  const expenses = month.filter(item => item.type === 'Despesa');
+  const spent = sum(expenses);
+  const balance = income - spentThroughToday;
+  const [year, monthNumber] = homeMonth.split('-').map(Number);
+  const days = new Date(Date.UTC(year, monthNumber, 0)).getUTCDate();
+  const salary = salaryForecast(items,today);
+  const salaryDate = salary ? salaryDateLabel.format(new Date(salary.date)) : '';
+  const salaryPeriod = salary ? (salary.days === 0 ? 'Hoje' : salary.days === 1 ? 'Falta 1 dia' : 'Faltam ' + salary.days + ' dias') + ' · ' + salaryDate : 'Sem data de salário';
+  const recent = newest(month).slice(0,5);
+  const moneyNumber = cents => currency.formatToParts(cents / 100).filter(part => part.type !== 'currency' && part.type !== 'literal').map(part => part.value).join('');
+  const categoriesUsed = new Set(expenses.map(item=>item.category)).size;
+  const values = {
+    balance:moneyNumber(balance), 'balance-badge':'Até hoje',
+    income:'+' + format(income), 'spent-summary':'−' + format(spentThroughToday),
+    'salary-prefix':salary ? 'R$' : '',
+    'salary-balance':salary ? moneyNumber(salary.balance) : '—',
+    'salary-period':salaryPeriod,
+    'mobile-salary-period':salary ? (salary.days === 0 ? 'Hoje' : salary.days + (salary.days === 1 ? ' dia' : ' dias')) + ' · ' + salary.date.slice(-2) + '/' + salary.date.slice(5,7) : 'Sem data de salário',
+    'salary-note':salary ? 'Saldo dos lançamentos anteriores a ' + salaryDate + '.' : 'Cadastre um lançamento como Receita → Salário para acompanhar a próxima data.',
+    daily:salary ? (salary.daily === null ? 'Dia do salário' : 'Disponível por dia: ' + format(salary.daily) + '/dia') : 'Disponível por dia ainda sem cálculo',
+    'salary-daily-note':salary ? (salary.daily === null ? 'Nenhum dia restante para distribuir o saldo.' : salary.balance < 0 ? 'O saldo antes do salário é negativo.' : 'Saldo dividido pelos dias restantes.') : '',
+    'salary-status':salary ? (salary.estimated ? 'Estimativa' : 'Agendado') : '',
+    'analysis-badge':categoriesUsed ? categoriesUsed + (categoriesUsed === 1 ? ' categoria' : ' categorias') : '',
+    'analysis-copy':'Evolução e distribuição de despesas ao longo das semanas de ' + monthText,
+    'mobile-spent':format(spent),
+    'recent-count':recent.length ? recent.length + (recent.length === 1 ? ' recente' : ' recentes') : ''
+  };
+  for(const [name,value] of Object.entries(values)){
+    const target=stitchSlot(home,name);
+    target.textContent=value;
+    target.hidden=!value;
+  }
+  stitchSlot(home,'mobile-salary-period').setAttribute('aria-label',salaryPeriod);
+  stitchSlot(home,'salary-daily-note').classList.toggle('mobile-redundant',!!salary && salary.days > 0 && salary.balance >= 0);
+  stitchSlot(home,'recent-rows').innerHTML = recent.length ? rows(recent,true) : '<p>Nenhum lançamento neste mês.</p>' + add;
+  const chart = stitchSlot(home,'chart');
+  chart.replaceChildren(homeSpending(expenses,'',days));
+  const buttons = [...home.querySelectorAll('[data-spend-category]')];
+  buttons.forEach(button => button.addEventListener('click',()=>{
+    buttons.forEach(item=>item.setAttribute('aria-pressed',String(item === button)));
+    chart.replaceChildren(homeSpending(expenses,button.dataset.spendCategory,days));
+    const category = button.dataset.spendCategory;
+    stitchSlot(main,'mobile-spent').textContent=format(sum(category ? expenses.filter(item=>item.category===category) : expenses));
+  }));
+  const toggle = home.querySelector('#toggleSaldoBtn');
+  const balanceText = stitchSlot(home,'balance');
+  const prefix = balanceText.parentElement.querySelector('[data-prefix]');
+  const updateBalanceVisibility = () => {
+    toggle.setAttribute('aria-pressed',String(balanceHidden));
+    toggle.setAttribute('aria-label',balanceHidden ? 'Mostrar saldo' : 'Ocultar saldo');
+    toggle.title=balanceHidden ? 'Mostrar saldo' : 'Ocultar saldo';
+    toggle.firstElementChild.textContent=balanceHidden ? 'visibility_off' : 'visibility';
+    prefix.hidden=balanceHidden;
+    balanceText.textContent=balanceHidden ? '••••••' : values.balance;
+    balanceText.setAttribute('aria-label',balanceHidden ? 'Saldo oculto' : format(balance));
+  };
+  updateBalanceVisibility();
+  toggle.addEventListener('click',()=>{
+    balanceHidden=!balanceHidden;
+    updateBalanceVisibility();
+  });
+  home.querySelectorAll('[data-list-month]').forEach(item=>{item.dataset.listMonth=homeMonth;});
+  main.replaceChildren(home);
+}
+
+function monthOptions(selected, {includeAll = false, baseMonths = [demoMonth]} = {}){
+  const months = new Set([...baseMonths, ...records().map(item => item.date.slice(0,7))]);
+  if(selected) months.add(selected);
+  return (includeAll ? '<option value="">Todos os meses</option>' : '') + [...months].sort().reverse().map(month => {
+    return '<option value="' + month + '"' + (month === selected ? ' selected' : '') + '>' + formatMonth(month) + '</option>';
+  }).join('');
 }
 
 function list(){
-  return '<section class="card"><h2>Filtros</h2><div class="fields"><label>Mês<input type="month" id="month" value="'+escape(filters.month)+'"></label><label>Tipo<select id="type"><option value="">Todos</option>'+options(Object.keys(categories),filters.type)+'</select></label><label>Categoria<select id="category"></select></label></div><button id="clear" type="button">Limpar filtros</button></section><section class="card" style="margin-top:16px"><h2>Resultados</h2><p id="count" class="muted" role="status"></p><div id="results"></div></section>';
+  return '<section class="card transactions-card"><h2>Filtros</h2><div class="fields"><label>Mês<select id="month">'+monthOptions(filters.month,{includeAll:true})+'</select></label><label>Tipo<select id="type"><option value="">Todos</option>'+options(Object.keys(categories),filters.type)+'</select></label><label>Categoria<select id="category"></select></label></div><button id="clear" type="button">Limpar filtros</button></section><section class="card transactions-card" style="margin-top:16px"><h2>Resultados</h2><p id="count" class="muted" role="status"></p><div id="results"></div></section>';
 }
 function listResults(){
   document.querySelector('#category').innerHTML='<option value="">Todas</option>'+options(filters.type?categories[filters.type]:Object.values(categories).flat(),filters.category);
-  const items=records().filter(item=>(!filters.month||item.date.startsWith(filters.month))&&(!filters.type||item.type===filters.type)&&(!filters.category||item.category===filters.category));
-  document.querySelector('#count').textContent=items.length===1?'1 lançamento':items.length+' lançamentos';
+  const items=records().filter(item=>(!filters.month||item.date.startsWith(filters.month))&&(!filters.type||item.type===filters.type)&&(!filters.category||item.category===filters.category)&&(!query||searchKey(item.description+' '+item.category).includes(query)));
+  const count=items.length===1?'1 lançamento':items.length+' lançamentos';
+  document.querySelector('#count').textContent=count+(query?' para a busca atual':'');
   document.querySelector('#results').innerHTML=items.length?rows(items):records().length?'<p>Nenhum lançamento corresponde aos filtros.</p><button type="button" id="clear-empty">Limpar filtros</button>':first;
   document.querySelector('#clear-empty')?.addEventListener('click',()=>{clearFilters();document.querySelector('#clear').focus();});
 }
 function clearFilters(){
+  search.value='';
+  query='';
   Object.assign(filters,{month:'',type:'',category:''});
   document.querySelector('#month').value='';
   document.querySelector('#type').value='';
   listResults();
 }
 function form(){
-  const data=draft??{type:'Despesa',amount:'',date:demoDate,category:'',description:''};
+  const data=draft??{type:'Despesa',amount:'',date:accountUser?localCalendarDate():demoDate,category:'',description:''};
   return '<form class="card form" novalidate><fieldset><legend>Tipo de lançamento</legend>'+Object.keys(categories).map(type=>'<label class="radio"><input type="radio" name="kind" value="'+type+'" '+(data.type===type?'checked':'')+'>'+type+'</label>').join('')+'</fieldset><div class="fields"><label>Valor (R$)<input name="amount" required inputmode="decimal" placeholder="0,00" value="'+escape(data.amount)+'" aria-describedby="amount-help amount-error"><small id="amount-help">Exemplo: 123,45</small><span class="field-error" id="amount-error"></span></label><label>Data<input name="date" type="date" required value="'+escape(data.date)+'" aria-describedby="date-error"><span class="field-error" id="date-error"></span></label><label class="wide">Categoria<select name="category" required aria-describedby="category-error"><option value="">Selecione</option>'+options(categories[data.type],data.category)+'</select><span class="field-error" id="category-error"></span></label><label class="wide">Descrição (opcional)<input name="description" maxlength="80" value="'+escape(data.description)+'"></label></div><div id="form-status" role="alert"></div><div class="actions"><button class="primary" type="submit">Salvar lançamento</button><a class="nav" id="cancel" href="#lancamentos">Cancelar</a></div></form>';
 }
 function formDraft(element){
@@ -178,8 +823,9 @@ function wireForm(){
     error('category','');
   });
   document.querySelector('#cancel').addEventListener('click',()=>{draft=null;});
-  element.addEventListener('submit',event=>{
+  element.addEventListener('submit',async event=>{
     event.preventDefault();
+    if(saveBusy) return;
     draft=formDraft(element);
     const cents=parseCents(draft.amount);
     const errors={amount:cents>0?'':'Informe um valor maior que zero, como 123,45.',date:draft.date&&field('date').validity.valid?'':'Informe uma data válida.',category:categories[draft.type].includes(draft.category)?'':'Selecione uma categoria.'};
@@ -188,37 +834,280 @@ function wireForm(){
     Object.entries(errors).forEach(([name,value])=>error(name,value));
     const invalid=Object.keys(errors).find(name=>errors[name]);
     if(invalid){field(invalid).focus();return;}
-    if(scenario.value==='save'){
+    if(appMode==='demo'&&scenario.value==='save'){
       status.className='notice error';
       status.textContent='Não foi possível salvar. Seus dados continuam no formulário. Troque o cenário para Dados fictícios e tente novamente.';
       return;
     }
-    if(scenario.value==='empty'){entries=[];scenario.value='normal';}
-    entries.push({...draft,description:draft.description.trim()||draft.category,amount:cents});
-    Object.assign(filters,{month:draft.date.slice(0,7),type:'',category:''});
+    const record={...draft,description:draft.description.trim()||draft.category,amount:cents};
+    if(accountUser){
+      const epoch=accountEpoch;
+      const submit=element.querySelector('button[type=submit]');
+      submit.disabled=true;
+      saveBusy=true;
+      try{
+        const payload=await apiRequest('/api/transactions',record);
+        if(epoch!==accountEpoch) return;
+        entries.push(requireTransaction(payload.item));
+      }catch(error){
+        if(epoch!==accountEpoch) return;
+        if(error.status===401){expireAccount();return;}
+        status.className='notice error';
+        status.textContent=error.status===400?'Confira os dados do lançamento.':'Não foi possível confirmar o salvamento. Verifique a lista antes de tentar novamente.';
+        return;
+      }finally{
+        if(epoch===accountEpoch){saveBusy=false;submit.disabled=false;}
+      }
+    }else{
+      if(scenario.value==='empty'){entries=[];scenario.value='normal';}
+      entries.push(record);
+    }
+    search.value='';
+    query='';
+    Object.assign(filters,{month:record.date.slice(0,7),type:'',category:''});
     draft=null;
     message='Lançamento salvo.';
     location.hash='lancamentos';
   });
 }
+const accountTools = document.querySelector('.account-tools');
+const accountChannel = appMode === 'checking' && typeof BroadcastChannel === 'function'
+  ? new BroadcastChannel('finflow-account-local') : null;
+
+async function apiRequest(path, body){
+  const request = {cache:'no-store',credentials:'same-origin',signal:AbortSignal.timeout(12000)};
+  if(body !== undefined){
+    request.method='POST';
+    request.headers={'Content-Type':'application/json'};
+    request.body=JSON.stringify(body);
+  }
+  const response = await fetch(path,request);
+  if(!response.ok) throw Object.assign(new Error('API request failed'),{status:response.status});
+  return response.status === 204 ? null : response.json();
+}
+
+function requireAccountUser(payload){
+  if(!Number.isSafeInteger(payload?.user?.id) || typeof payload.user.email !== 'string') throw new Error('Invalid account response');
+  return payload.user;
+}
+
+function requireTransaction(item){
+  if(!Number.isSafeInteger(item?.id) || !categories[item.type]?.includes(item.category)
+    || !Number.isSafeInteger(item.amount) || item.amount <= 0 || typeof item.description !== 'string'
+    || !/^\d{4}-\d{2}-\d{2}$/.test(item.date)) throw new Error('Invalid transaction response');
+  return item;
+}
+
+function forgetAccount(){
+  accountEpoch++;
+  accountUser=null;
+  accountState='idle';
+  entries=[];
+  draft=null;
+  message='';
+  saveBusy=false;
+  balanceHidden=false;
+  query='';
+  search.value='';
+  homeMonth=localCalendarDate().slice(0,7);
+  Object.assign(filters,{month:'',type:'',category:''});
+}
+
+function expireAccount(){
+  forgetAccount();
+  authNotice='Sua sessão expirou. Entre novamente para continuar.';
+  document.querySelector('.toolbar-settings').open=false;
+  render(true);
+}
+
+async function loadAccountTransactions(){
+  const epoch=accountEpoch;
+  accountState='loading';
+  render(false);
+  try{
+    const payload=await apiRequest('/api/transactions');
+    if(epoch!==accountEpoch) return;
+    entries=payload.items.map(requireTransaction);
+    accountState='ready';
+  }catch(error){
+    if(epoch!==accountEpoch) return;
+    if(error.status===401){expireAccount();return;}
+    accountState='error';
+  }
+  render(true);
+}
+
+async function restoreAccount(){
+  const initialProbe=appMode==='checking';
+  const previousUser=accountUser;
+  const previousForm=main.querySelector('form.form:not(.account-card)');
+  const previousDraft=previousForm && location.hash==='#novo' ? formDraft(previousForm) : draft;
+  const previousView={month:homeMonth,filters:{...filters},query,search:search.value,balanceHidden};
+  forgetAccount();
+  const epoch=accountEpoch;
+  authBusy=true;
+  sessionProblem=false;
+  authNotice='';
+  render(false);
+  try{
+    const user=requireAccountUser(await apiRequest('/api/auth/session'));
+    if(epoch!==accountEpoch) return;
+    appMode='account';
+    accountUser=user;
+    if(user.id===previousUser?.id){
+      draft=previousDraft;
+      homeMonth=previousView.month;
+      Object.assign(filters,previousView.filters);
+      query=previousView.query;
+      search.value=previousView.search;
+      balanceHidden=previousView.balanceHidden;
+    }
+  }catch(error){
+    if(epoch!==accountEpoch) return;
+    if(initialProbe && error.status===404){
+      appMode='demo';
+      entries=[...initial];
+      homeMonth=demoMonth;
+      filters.month=demoMonth;
+    }else{
+      appMode='account';
+      sessionProblem=error.status!==401;
+      if(!sessionProblem && previousUser) authNotice='Sua sessão expirou. Entre novamente para continuar.';
+    }
+  }finally{
+    if(epoch===accountEpoch) authBusy=false;
+  }
+  if(accountUser) await loadAccountTransactions();
+  else render(false);
+}
+
+async function logout(){
+  if(authBusy) return;
+  forgetAccount();
+  const epoch=accountEpoch;
+  authBusy=true;
+  logoutProblem=false;
+  authNotice='';
+  document.querySelector('.toolbar-settings').open=false;
+  render(true);
+  try{
+    await apiRequest('/api/auth/logout',{});
+    accountChannel?.postMessage('account-changed');
+    if(location.hash!=='#login') location.hash='login';
+  }catch{
+    logoutProblem=true;
+  }finally{
+    if(epoch===accountEpoch) authBusy=false;
+  }
+  render(true);
+}
+
+function updateAccountChrome(){
+  document.body.classList.toggle('account-mode',appMode!=='demo');
+  document.body.classList.toggle('account-gated',appMode!=='demo'&&!accountUser);
+  accountTools.hidden=!accountUser;
+  accountTools.querySelector('.account-email').textContent=accountUser?.email ?? '';
+}
+
+function renderAccountGate(focus){
+  const register=location.hash==='#cadastro';
+  const pending=appMode==='checking'||authBusy;
+  const problem=sessionProblem||logoutProblem;
+  if(pending||problem){
+    const title=pending?'Verificando sessão…':logoutProblem?'Não foi possível encerrar a sessão':'Não foi possível verificar a sessão';
+    main.innerHTML='<section class="card form account-card"><h1 tabindex="-1">'+title+'</h1>'
+      +(pending?'<p role="status">Aguarde um momento.</p>':'<p role="alert">Verifique a conexão com a API local.</p><button id="account-retry">Tentar novamente</button>')+'</section>';
+    main.querySelector('#account-retry')?.addEventListener('click',logoutProblem?logout:restoreAccount);
+  }else{
+    const title=register?'Criar conta':'Entrar na sua conta';
+    main.innerHTML='<form class="card form account-card"><h1 tabindex="-1">'+title+'</h1><p class="muted">Use uma conta de teste neste ambiente local.</p>'
+      +'<div class="account-fields"><label>E-mail<input name="email" type="email" autocomplete="username" required></label>'
+      +'<label>Senha<input name="password" type="password" autocomplete="'+(register?'new-password':'current-password')+'" required'
+      +(register?' minlength="15" aria-describedby="password-help"':'')+'>'
+      +(register?'<small id="password-help">Use pelo menos 15 caracteres.</small>':'')+'</label></div>'
+      +'<p id="auth-status" class="error" role="alert"></p><button class="primary" type="submit">'+(register?'Criar conta':'Entrar')+'</button>'
+      +'<p class="account-switch">'+(register?'<a href="#login">Já tenho conta</a>':'<a href="#cadastro">Criar conta</a>')+'</p></form>';
+    main.querySelector('#auth-status').textContent=authNotice;
+    main.querySelector('form').addEventListener('submit',event=>submitAccount(event,register));
+  }
+  if(focus) main.querySelector('h1').focus();
+}
+
+async function submitAccount(event, register){
+  event.preventDefault();
+  if(authBusy) return;
+  const form=event.currentTarget;
+  const submit=form.querySelector('button[type=submit]');
+  const status=form.querySelector('#auth-status');
+  const fields=new FormData(form);
+  const credentials={email:fields.get('email').trim(),password:fields.get('password')};
+  const epoch=accountEpoch;
+  authBusy=true;
+  submit.disabled=true;
+  status.textContent='';
+  let registered=false;
+  try{
+    if(register){
+      await apiRequest('/api/auth/register',credentials);
+      registered=true;
+    }
+    const user=requireAccountUser(await apiRequest('/api/auth/login',credentials));
+    if(epoch!==accountEpoch) return;
+    forgetAccount();
+    accountUser=user;
+    authNotice='';
+    authBusy=false;
+    accountChannel?.postMessage('account-changed');
+    if(location.hash!=='#painel') location.hash='painel';
+    await loadAccountTransactions();
+  }catch(error){
+    if(epoch!==accountEpoch) return;
+    authNotice=registered?'Conta criada. Use Entrar para iniciar a sessão.'
+      :error.status===409?'Esse e-mail não está disponível.'
+      :error.status===401?'E-mail ou senha inválidos.'
+      :error.status===400?'Confira o e-mail e a senha.'
+      :error.status===429?'Muitas tentativas. Aguarde antes de tentar novamente.'
+      :'Não foi possível acessar a API local. Tente novamente.';
+    status.textContent=authNotice;
+    if(registered) location.hash='login';
+    else if(!form.isConnected) render(true);
+  }finally{
+    if(epoch===accountEpoch){
+      authBusy=false;
+      submit.disabled=false;
+      if(!form.isConnected) render(false);
+    }
+  }
+}
+
 function render(focus){
+  updateAccountChrome();
+  if(appMode!=='demo'&&!accountUser){
+    document.body.classList.remove('home-view');
+    renderAccountGate(focus);
+    return;
+  }
+  if(accountUser&&accountState!=='ready'){
+    main.innerHTML='<section class="card state-card"><h1 tabindex="-1">Lançamentos da conta</h1>'
+      +(accountState==='error'?'<p role="alert">Não foi possível carregar os lançamentos.</p><button id="account-load-retry">Tentar novamente</button>':'<p role="status">Carregando lançamentos…</p>')+'</section>';
+    main.querySelector('#account-load-retry')?.addEventListener('click',loadAccountTransactions);
+    if(focus) main.querySelector('h1').focus();
+    return;
+  }
   const view=['lancamentos','novo'].includes(location.hash.slice(1))?location.hash.slice(1):'painel';
+  document.body.classList.toggle('home-view', view === 'painel');
   document.querySelectorAll('nav a').forEach(a=>{
     if(a.hash==='#'+view) a.setAttribute('aria-current','page');else a.removeAttribute('aria-current');
   });
-  const title={painel:'Painel',lancamentos:'Lançamentos',novo:'Novo lançamento'}[view];
-  main.innerHTML='<div class="intro"><h1 tabindex="-1">'+title+'</h1>'+(view==='novo'?'':add)+'</div>';
-  if(view!=='novo'&&scenario.value==='load'){
-    main.insertAdjacentHTML('beforeend','<section class="card"><p class="error" role="alert">Não foi possível carregar os dados.</p><button id="retry">Tentar novamente</button></section>');
+  const title={painel:'Olá, Beatriz',lancamentos:'Lançamentos',novo:'Novo lançamento'}[view];
+  const heading = '<h1 tabindex="-1">' + title + '</h1>';
+  if(view==='painel') mountHome(appMode!=='demo'||scenario.value!=='load');
+  else main.innerHTML='<div class="intro">'+heading+(view==='novo'?'':add)+'</div>';
+  if(appMode==='demo'&&view!=='novo'&&scenario.value==='load'){
+    main.insertAdjacentHTML('beforeend','<section class="card state-card"><p class="error" role="alert">Não foi possível carregar os dados.</p><button id="retry">Tentar novamente</button></section>');
     document.querySelector('#retry').onclick=()=>{scenario.value='normal';render(true);};
-  }else if(view==='painel'){
-    main.insertAdjacentHTML('beforeend',dashboard());
-    main.querySelector('.card-head a').addEventListener('click',()=>{
-      Object.assign(filters,{month:'',type:'',category:''});
-    });
-  }
-  else if(view==='novo'){main.insertAdjacentHTML('beforeend',form());wireForm();}
-  else{
+  }else if(view==='novo'){main.insertAdjacentHTML('beforeend',form());wireForm();}
+  else if(view==='lancamentos'){
     if(message){main.insertAdjacentHTML('beforeend','<p class="notice" role="status">'+message+'</p>');message='';}
     main.insertAdjacentHTML('beforeend',list());
     for(const name of ['month','type','category']) document.querySelector('#'+name).addEventListener('change',event=>{
@@ -229,14 +1118,88 @@ function render(focus){
     document.querySelector('#clear').onclick=clearFilters;
     listResults();
   }
+  main.querySelector('#home-month')?.addEventListener('change',event=>{
+    homeMonth=event.currentTarget.value;
+    render(false);
+    main.querySelector('#home-month').focus({preventScroll:true});
+  });
+  main.querySelectorAll('[data-list-month]').forEach(link => link.addEventListener('click',()=>{
+    search.value='';
+    query='';
+    Object.assign(filters,{month:link.dataset.listMonth,type:'',category:''});
+  }));
   if(focus) main.querySelector('h1').focus();
 }
+document.querySelector('#transaction-search').addEventListener('submit',event=>{
+  event.preventDefault();
+  setMobileSearch(false);
+  query=searchKey(search.value);
+  Object.assign(filters,{month:'',type:'',category:''});
+  if(location.hash==='#lancamentos') render(true);
+  else location.hash='lancamentos';
+});
+const mobileSearch = document.querySelector('.mobile-search-toggle');
+function setMobileSearch(open){
+  document.querySelector('.topbar').classList.toggle('mobile-search-open',open);
+  mobileSearch.setAttribute('aria-expanded',String(open));
+  mobileSearch.setAttribute('aria-label',open ? 'Fechar busca' : 'Abrir busca');
+}
+mobileSearch.addEventListener('click',()=>{
+  const open = mobileSearch.getAttribute('aria-expanded') !== 'true';
+  setMobileSearch(open);
+  if(open) search.focus();
+});
+search.addEventListener('keydown',event=>{
+  if(event.key==='Escape' && mobileSearch.getAttribute('aria-expanded')==='true'){
+    setMobileSearch(false);
+    mobileSearch.focus();
+  }
+});
+let pendingSpending = false;
+function showMobileSpending(){
+  const heading = main.querySelector('.stitch-spending h2');
+  if(heading){
+    heading.tabIndex=-1;
+    heading.focus({preventScroll:true});
+    heading.scrollIntoView({block:'start'});
+  }
+}
+document.addEventListener('click',event=>{
+  if(event.target.closest('[data-mobile-spending]')){
+    if(document.body.classList.contains('home-view')) showMobileSpending();
+    else{
+      pendingSpending=true;
+      location.hash='painel';
+    }
+  }
+  if(event.target.closest('[data-mobile-menu]')){
+    const settings=document.querySelector('.toolbar-settings');
+    settings.open=true;
+    settings.scrollIntoView({block:'start'});
+    settings.querySelector('summary').focus({preventScroll:true});
+  }
+});
 document.querySelector('.skip').addEventListener('click',event=>{event.preventDefault();main.focus();});
 scenario.addEventListener('change',()=>{
+  if(appMode!=='demo') return;
   if(location.hash==='#novo'&&main.querySelector('form')){draft=formDraft(main.querySelector('form'));return;}
   render(false);
 });
-window.addEventListener('hashchange',()=>render(true));
-render(false);
+window.addEventListener('hashchange',()=>{
+  render(true);
+  if(pendingSpending){
+    pendingSpending=false;
+    showMobileSpending();
+  }
+});
+document.querySelector('#account-logout').addEventListener('click',logout);
+accountChannel?.addEventListener('message',event=>{
+  if(event.data==='account-changed'&&appMode==='account'&&!authBusy) restoreAccount();
+});
+document.addEventListener('visibilitychange',()=>{
+  if(document.visibilityState==='visible'&&accountUser&&!authBusy&&!saveBusy&&accountState==='ready') restoreAccount();
+});
+if(appMode==='checking') restoreAccount();
+else render(false);
 </script>
 </html>
