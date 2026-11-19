@@ -3,24 +3,24 @@
 Na raiz do repositório, rode com Node.js 24. Não há dependências de instalação.
 
 ```powershell
-node backend/auth.cjs
-node --test backend/auth.test.cjs backend/transactions.test.cjs
+npm start
+npm test
 ```
 
 Abra http://127.0.0.1:4174 para carregar o protótipo e a API na mesma origem. Use esse endereço ao integrar as telas. O servidor lê o HTML e os arquivos estáticos existentes. Defina `FINFLOW_AUTH_PORT` para usar outra porta. O SQLite fica em `backend/.local/auth.sqlite`, ignorado pelo Git. Use apenas dados fictícios nesse servidor. Os testes criam bancos temporários e os removem ao terminar.
 
 ## Interface para o Front-end
 
-Todas as rotas estão sob `/api/auth`. Envie JSON em todas as requisições POST. As respostas de conta têm o formato `{"user":{"id":1,"email":"pessoa@example.test"}}`.
+Todas as rotas estão sob `/api/auth`. Envie JSON em todas as requisições POST. Quando informados no cadastro, os campos `name` e `salaryDay` acompanham a conta. Para contas sem esses campos, a resposta tem o formato `{"user":{"id":1,"email":"pessoa@example.test"}}`.
 
 | Método e rota | Corpo | Sucesso |
 |---|---|---|
-| POST /register | `{ email, password }` | 201 e conta criada. Em seguida, faça login. |
-| POST /login | `{ email, password }` | 200 e conta. O navegador recebe o cookie. |
+| POST /register | `{ email, password, name?, salaryDay? }` | 201 e conta criada. Em seguida, faça login. |
+| POST /login | `{ email, password, remember? }` | 200 e conta. O navegador recebe o cookie. |
 | GET /session | — | 200 e conta da sessão. |
 | POST /logout | `{}` | 204. Revoga a sessão e expira o cookie. |
 
-O e-mail é normalizado para minúsculas e sem espaços nas pontas antes da verificação de unicidade. A senha tem pelo menos 15 caracteres no cadastro e aceita até 1.024 bytes. O cookie é HttpOnly e o navegador o envia automaticamente em chamadas de mesma origem. Use `GET /session` na abertura do app para restaurar o estado da sessão. Cada sessão dura até sete dias e o login substitui a sessão que o navegador apresentar.
+O e-mail é normalizado para minúsculas e sem espaços nas pontas antes da verificação de unicidade. A senha tem pelo menos 15 caracteres no cadastro e aceita até 1.024 bytes. O cookie é HttpOnly e o navegador o envia automaticamente em chamadas de mesma origem. Use `GET /session` na abertura do app para restaurar o estado da sessão. O login substitui a sessão que o navegador apresentar. Com `remember: true`, a sessão e o cookie expiram em 30 dias. Com `false`, o cookie dura a sessão do navegador e o servidor limita a validade a sete dias. Ao omitir o campo, a validade do cookie e da sessão é de sete dias.
 
 ```js
 const response = await fetch('/api/auth/login', {

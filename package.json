@@ -1,0 +1,14 @@
+{
+  "name": "finflow-prototype",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "start": "node backend/auth.cjs",
+    "preview": "node scripts/serve.cjs",
+    "build:css": "npx --yes tailwindcss@3.4.17 -c config/tailwind.cjs -i src/styles/stitch-home.input.css -o public/assets/css/stitch-home.css --minify",
+    "test": "node --test backend/auth.test.cjs backend/transactions.test.cjs"
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}

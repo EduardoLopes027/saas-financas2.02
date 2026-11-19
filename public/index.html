@@ -1,0 +1,422 @@
+<!doctype html>
+<html lang="pt-BR">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>FinFlow · Finanças pessoais</title>
+<link rel="stylesheet" href="./assets/css/stitch-home.css">
+<link rel="stylesheet" href="./assets/css/app.css">
+<link rel="stylesheet" href="./assets/css/auth.css">
+<link rel="stylesheet" href="./assets/css/transactions.css">
+<a class="skip" href="#principal">Pular para o conteúdo</a>
+<header><div class="wrap mast">
+<span class="brand"><span class="brand-label">FinFlow</span></span>
+<nav aria-label="Navegação principal">
+  <a class="nav" href="#painel" title="Home"><span class="material-symbols-outlined" aria-hidden="true">grid_view</span><span class="nav-label">Home</span></a>
+  <a class="nav" href="#lancamentos" title="Lançamentos"><span class="material-symbols-outlined" aria-hidden="true">receipt_long</span><span class="nav-label">Lançamentos</span></a>
+  <span class="nav" aria-disabled="true" title="Cartões indisponíveis no protótipo"><span class="material-symbols-outlined" aria-hidden="true">credit_card</span>Cartões</span>
+  <span class="nav" aria-disabled="true" title="Investimentos indisponíveis no protótipo"><span class="material-symbols-outlined" aria-hidden="true">trending_up</span>Investimentos</span>
+  <span class="nav" aria-disabled="true" title="Planejamento indisponível no protótipo"><span class="material-symbols-outlined" aria-hidden="true">account_balance_wallet</span>Planejamento</span>
+</nav>
+<div class="sidebar-tools">
+  <section class="sidebar-quick" aria-label="Ações bancárias indisponíveis">
+    <p>AÇÕES RÁPIDAS <small>· indisponíveis</small></p>
+    <div class="quick-items"><span><i class="material-symbols-outlined" aria-hidden="true">payments</i>Pix</span><span><i class="material-symbols-outlined" aria-hidden="true">sync_alt</i>Transferir</span><span><i class="material-symbols-outlined" aria-hidden="true">qr_code_scanner</i>Pagar</span></div>
+  </section>
+  <div class="sidebar-profile"><img class="avatar" src="./assets/images/FinFlow-avatar.jpg" alt=""><span><strong>Beatriz</strong><small>Perfil de demonstração</small></span></div>
+</div>
+</div></header>
+<div class="topbar">
+<a class="mobile-brand" href="#painel"><span class="material-symbols-outlined" aria-hidden="true">account_balance_wallet</span>FinFlow</a>
+<form class="top-search" id="transaction-search" role="search">
+  <button type="submit" aria-label="Buscar lançamentos"><span class="material-symbols-outlined" aria-hidden="true">search</span></button>
+  <input type="search" id="search-query" aria-label="Buscar por descrição ou categoria" placeholder="Buscar transações, categorias…">
+</form>
+<div class="top-tools">
+<button class="toolbar-icon mobile-search-toggle" type="button" aria-label="Abrir busca" aria-expanded="false" aria-controls="transaction-search"><span class="material-symbols-outlined" aria-hidden="true">search</span></button>
+<button class="toolbar-icon" type="button" disabled aria-label="Notificações indisponíveis" title="Notificações indisponíveis"><span class="material-symbols-outlined" aria-hidden="true">notifications</span></button>
+<details class="toolbar-settings"><summary class="toolbar-icon" aria-label="Configurações do protótipo" title="Configurações do protótipo"><span class="material-symbols-outlined" aria-hidden="true">tune</span></summary>
+<label class="test demo-scenario"><small>Cenário do protótipo</small><select id="scenario"><option value="normal">Dados fictícios</option><option value="empty">Sem lançamentos</option><option value="load">Falha de carregamento</option><option value="save">Falha ao salvar</option></select></label>
+<div class="test account-tools" hidden><strong class="account-email"></strong><button type="button" id="account-logout">Sair da conta</button></div></details>
+<div class="top-profile"><img class="avatar" src="./assets/images/FinFlow-avatar.jpg" alt=""><strong>Beatriz</strong></div>
+</div></div>
+<nav class="mobile-dock" aria-label="Navegação inferior">
+  <a href="#painel" aria-label="Home"><span class="material-symbols-outlined" aria-hidden="true">grid_view</span></a>
+  <a href="#lancamentos" aria-label="Lançamentos"><span class="material-symbols-outlined" aria-hidden="true">receipt_long</span></a>
+  <button type="button" disabled aria-label="Cartões indisponíveis"><span class="material-symbols-outlined" aria-hidden="true">credit_card</span></button>
+  <button type="button" data-mobile-spending aria-label="Gastos semanais"><span class="material-symbols-outlined" aria-hidden="true">trending_up</span></button>
+  <button type="button" data-mobile-menu aria-label="Configurações do protótipo"><span class="material-symbols-outlined" aria-hidden="true">tune</span></button>
+</nav>
+<main class="wrap" id="principal" tabindex="-1"></main>
+<template id="stitch-transactions">
+  <div class="transactions-page">
+    <div class="transactions-heading">
+      <div class="transactions-heading-copy">
+        <p class="transactions-eyebrow">Finanças pessoais <span aria-hidden="true">/</span> <strong>Extrato consolidado</strong></p>
+        <h1 tabindex="-1">Lançamentos</h1>
+        <p>Gerencie e acompanhe todas as suas receitas e despesas detalhadas.</p>
+      </div>
+      <div class="transactions-actions">
+        <div class="transactions-period">
+          <button type="button" data-month-step="-1" aria-label="Mês anterior"><span aria-hidden="true">‹</span></button>
+          <span class="material-symbols-outlined" aria-hidden="true">calendar_today</span>
+          <span id="transactions-month" aria-live="polite"></span>
+          <button type="button" data-month-step="1" aria-label="Próximo mês"><span aria-hidden="true">›</span></button>
+        </div>
+        <button class="transactions-export" type="button"><span aria-hidden="true">↓</span> Exportar</button>
+        <a class="transactions-add" href="#novo"><span class="material-symbols-outlined" aria-hidden="true">add</span>Novo lançamento</a>
+      </div>
+    </div>
+    <p class="notice transactions-notice" role="status" hidden></p>
+    <section class="transactions-summary" aria-label="Resumo do período">
+      <article class="transactions-stat" data-tone="income">
+        <div class="transactions-stat-header">
+          <span class="transactions-stat-icon" aria-hidden="true">↓</span>
+          <h2>Entradas<br>(Receitas)</h2>
+        </div>
+        <p class="transactions-stat-value" data-total="income"></p>
+        <p class="transactions-stat-detail" data-detail="income"></p>
+      </article>
+      <article class="transactions-stat" data-tone="expense">
+        <div class="transactions-stat-header">
+          <span class="transactions-stat-icon" aria-hidden="true">↑</span>
+          <h2>Saídas<br>(Despesas)</h2>
+        </div>
+        <p class="transactions-stat-value" data-total="expense"></p>
+        <p class="transactions-stat-detail" data-detail="expense"></p>
+      </article>
+      <article class="transactions-stat" data-tone="balance">
+        <div class="transactions-stat-header">
+          <span class="transactions-stat-icon material-symbols-outlined" aria-hidden="true">account_balance_wallet</span>
+          <h2>Balanço do período</h2>
+          <span class="transactions-stat-badge" data-stitch="balance-status"></span>
+        </div>
+        <p class="transactions-stat-value" data-total="balance"></p>
+        <p class="transactions-stat-detail" data-detail="balance"></p>
+      </article>
+    </section>
+    <section class="transactions-filters" aria-label="Filtros dos lançamentos">
+      <label class="transactions-search">
+        <span class="material-symbols-outlined" aria-hidden="true">search</span>
+        <input id="transactions-query" type="search" aria-label="Buscar na lista" placeholder="Buscar na lista…">
+      </label>
+      <div class="transactions-types" role="group" aria-label="Tipo de lançamento">
+        <button type="button" data-type="" aria-pressed="true">Todos</button>
+        <button type="button" data-type="Receita" aria-pressed="false">Receitas</button>
+        <button type="button" data-type="Despesa" aria-pressed="false">Despesas</button>
+      </div>
+      <label class="transactions-select">
+        <span class="material-symbols-outlined" aria-hidden="true">grid_view</span>
+        <select id="transactions-category" aria-label="Categoria"></select>
+      </label>
+      <label class="transactions-select">
+        <span class="material-symbols-outlined" aria-hidden="true">credit_card</span>
+        <select id="transactions-payment" aria-label="Forma de pagamento"></select>
+      </label>
+      <button class="transactions-clear" id="transactions-clear" type="button" title="Limpar filtros" aria-label="Limpar filtros"><span class="material-symbols-outlined" aria-hidden="true">tune</span></button>
+    </section>
+    <section class="transactions-panel" aria-label="Extrato detalhado">
+      <table class="transactions-table" role="table">
+        <thead role="rowgroup">
+          <tr role="row">
+            <th scope="col" role="columnheader">Data</th>
+            <th scope="col" role="columnheader">Descrição</th>
+            <th scope="col" role="columnheader">Categoria</th>
+            <th scope="col" role="columnheader">Forma de pagamento</th>
+            <th scope="col" role="columnheader">Status</th>
+            <th scope="col" role="columnheader">Valor</th>
+            <th scope="col" role="columnheader" class="transactions-action-heading" aria-label="Ações"></th>
+          </tr>
+        </thead>
+        <tbody role="rowgroup"></tbody>
+      </table>
+      <div class="transactions-empty" hidden></div>
+      <div class="transactions-footer">
+        <p data-stitch="count" role="status"></p>
+        <label class="transactions-page-size">Itens por página:
+          <select id="transactions-page-size">
+            <option>10</option><option>25</option><option>50</option>
+          </select>
+        </label>
+        <nav class="transactions-pagination" aria-label="Páginas de lançamentos"></nav>
+      </div>
+    </section>
+  </div>
+</template>
+<!-- Home e gráfico adaptados diretamente do code.html exportado pelo Stitch. -->
+<template id="stitch-auth">
+  <div class="auth-page">
+    <div class="auth-bar">
+      <span class="auth-brand"><i class="material-symbols-outlined" aria-hidden="true">account_balance_wallet</i> FinFlow</span>
+      <div class="auth-meta">
+        <details><summary><i class="material-symbols-outlined" aria-hidden="true">help</i> Ajuda</summary>
+          <p>Entre com seu e-mail e senha. No primeiro acesso, selecione Criar Conta.</p></details>
+        <span><i class="material-symbols-outlined" aria-hidden="true">language</i> PT-BR</span>
+      </div>
+    </div>
+    <div class="auth-stage">
+      <div class="auth-shell">
+        <aside class="auth-story">
+          <div><span class="auth-badge"><b></b> Finanças pessoais</span>
+            <h2>Controle suas finanças com clareza absoluta.</h2>
+            <p>Acompanhe seu saldo, suas receitas e despesas em um só lugar.</p></div>
+          <div class="auth-example">
+            <div class="auth-example-head"><i class="material-symbols-outlined" aria-hidden="true">account_balance</i>
+              <div>Patrimônio Consolidado<small>Exemplo ilustrativo</small></div><strong>↗ +14,8%</strong></div>
+            <div class="auth-amount"><small>R$</small> 128.450,80</div>
+            <svg viewBox="0 0 280 44" aria-hidden="true"><defs><linearGradient id="auth-spark" x2="0" y2="1"><stop stop-color="#6cf8bb" stop-opacity=".35"/><stop offset="1" stop-color="#6cf8bb" stop-opacity="0"/></linearGradient></defs><path d="M0 36 C40 38 70 20 110 24 S180 8 220 12 S265 4 280 2 V44 H0Z" fill="url(#auth-spark)"/><path d="M0 36 C40 38 70 20 110 24 S180 8 220 12 S265 4 280 2" fill="none" stroke="#006c49" stroke-width="2.5"/></svg>
+          </div>
+          <small class="auth-note"><i class="material-symbols-outlined" aria-hidden="true">verified_user</i> Acesso individual à sua conta</small>
+        </aside>
+        <section class="auth-panel">
+          <nav class="auth-tabs" aria-label="Acesso à conta"><a href="#login">Entrar</a><a href="#cadastro">Criar Conta</a></nav>
+          <div class="auth-content">
+            <h1 tabindex="-1"></h1><p class="auth-intro"></p>
+            <div data-login>
+              <button class="auth-google" type="button" disabled title="Login com Google indisponível"><svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><path d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.8-2.4 3.66v3.04h3.87c2.26-2.09 3.67-5.17 3.67-9.14z" fill="#4285F4"></path>
+<path d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.87-3.04c-1.08.72-2.45 1.16-4.06 1.16-3.13 0-5.78-2.11-6.73-4.96H1.25v3.13C3.26 21.36 7.35 24 12 24z" fill="#34A853"></path>
+<path d="M5.27 14.25c-.25-.72-.38-1.49-.38-2.25s.13-1.53.38-2.25V6.62H1.25C.45 8.24 0 10.06 0 12s.45 3.76 1.25 5.38l4.02-3.13z" fill="#FBBC05"></path>
+<path d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.35 0 3.26 2.64 1.25 6.62l4.02 3.13c.95-2.85 3.6-4.96 6.73-4.96z" fill="#EA4335"></path></svg> Continuar com Google <small>(indisponível)</small></button>
+              <div class="auth-divider">ou com seu e-mail</div>
+            </div>
+            <form>
+              <div data-register><label for="auth-name">Nome completo</label><div class="auth-input"><i class="material-symbols-outlined" aria-hidden="true">person</i><input id="auth-name" name="name" autocomplete="name" placeholder="Seu nome completo" maxlength="120" pattern=".*\S.*" title="Informe seu nome." required></div></div>
+              <div><label for="auth-email">E-mail pessoal ou corporativo</label><div class="auth-input"><i class="material-symbols-outlined" aria-hidden="true">mail</i><input id="auth-email" name="email" type="email" autocomplete="username" placeholder="seu@email.com" required></div></div>
+              <div><div class="auth-label-row"><label for="auth-password">Senha de acesso</label><small data-login title="Recuperação de senha indisponível">Esqueci minha senha · indisponível</small></div>
+                <div class="auth-input"><i class="material-symbols-outlined" aria-hidden="true">lock</i><input id="auth-password" name="password" type="password" required><button id="auth-eye" type="button" aria-label="Mostrar senha" aria-pressed="false"><i class="material-symbols-outlined" aria-hidden="true">visibility</i></button></div>
+                <div data-register class="auth-strength"><meter min="0" max="15" value="0" aria-label="Comprimento da senha"></meter><small id="auth-password-help">Mínimo de 15 caracteres</small></div>
+              </div>
+              <div data-register><div class="auth-label-row"><label for="auth-salary">Dia habitual de recebimento</label><small>Orçamento dinâmico</small></div>
+                <div class="auth-input"><i class="material-symbols-outlined" aria-hidden="true">calendar_today</i><select id="auth-salary" name="salaryDay"><option value="5">5º dia útil</option><option value="1">Dia 01</option><option value="10">Dia 10</option><option value="15">Dia 15</option><option value="20">Dia 20</option><option value="25">Dia 25</option><option value="30">Último dia do mês</option></select></div></div>
+              <label data-login class="auth-remember"><input name="remember" type="checkbox" checked> Lembrar por 30 dias</label>
+              <p id="auth-status" role="alert"></p>
+              <button class="auth-submit" type="submit"><span></span><i class="material-symbols-outlined" aria-hidden="true">arrow_forward</i></button>
+            </form>
+          </div>
+          <div class="auth-assurance"><i class="material-symbols-outlined" aria-hidden="true">lock</i> Acesso com senha</div>
+        </section>
+      </div>
+    </div>
+    <div class="auth-footer"><span><i class="material-symbols-outlined" aria-hidden="true">account_balance_wallet</i> Finanças pessoais</span><span>FinFlow</span></div>
+  </div>
+</template>
+<template id="stitch-home">
+<div class="flex flex-col w-full gap-space-lg pb-space-xl stitch-dashboard">
+<!-- Top Greeting & Header Bar -->
+<div class="flex flex-col md:flex-row md:items-center justify-between gap-space-md pt-space-xs stitch-greeting">
+<img class="mobile-welcome-avatar" src="./assets/images/FinFlow-avatar.jpg" alt="">
+<div class="flex flex-col gap-1">
+<div class="flex items-center gap-space-xs">
+<h1 tabindex="-1" class="font-headline-lg text-headline-lg text-on-surface font-bold tracking-tight">Olá, Beatriz</h1>
+<span aria-hidden="true" class="text-2xl">👋</span>
+</div>
+<p data-stitch="intro" class="font-body-md text-body-md text-on-surface-variant"></p>
+<p class="mobile-intro-copy">Aqui está o resumo do seu mês</p>
+</div>
+<!-- Actions: Period Filter & Add Entry -->
+<div class="flex items-center flex-wrap gap-space-sm stitch-actions">
+<label class="inline-flex items-center gap-2 px-space-md py-2.5 bg-surface-container-lowest rounded-full shadow-[0_2px_8px_rgba(15,23,42,0.04)] text-on-surface hover:bg-surface-container-low transition-colors cursor-pointer select-none stitch-period"><span aria-hidden="true" class="material-symbols-outlined text-[18px] text-primary">calendar_today</span><select id="home-month" aria-label="Mês"></select></label>
+<a href="#novo" aria-label="Novo lançamento" class="inline-flex items-center gap-2 px-space-lg py-2.5 bg-primary-container text-on-primary rounded-full font-headline-md text-body-sm font-semibold shadow-[0_8px_20px_-4px_rgba(67,56,202,0.35)] hover:bg-primary transition-all active:scale-[0.98] select-none stitch-add">
+<span aria-hidden="true" class="material-symbols-outlined text-[20px]">add</span>
+<span class="stitch-add-long">Novo Lançamento</span><span class="stitch-add-short">Novo</span>
+</a>
+</div>
+</div>
+<!-- Key Metrics Row: 2 Prominent Cards -->
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-space-lg stitch-metrics">
+<!-- Card 1: Saldo Atual -->
+<div class="relative overflow-hidden bg-surface-container-lowest rounded-lg p-space-lg shadow-[0_4px_24px_-4px_rgba(15,23,42,0.05),0_2px_8px_-2px_rgba(15,23,42,0.03)] flex flex-col justify-between transition-all hover:shadow-[0_8px_30px_-4px_rgba(15,23,42,0.08)] stitch-card stitch-balance">
+<!-- Ambient Glow Behind Balance -->
+<div class="absolute -top-12 -right-12 w-48 h-48 bg-primary-fixed/30 rounded-full blur-3xl pointer-events-none"></div>
+<div class="flex flex-col gap-space-md relative z-10">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-space-xs">
+<span class="w-2 h-2 rounded-full bg-primary-container"></span>
+<span class="font-label-caps text-label-caps uppercase tracking-wider text-outline">Saldo total disponível</span>
+</div>
+<button aria-pressed="false" aria-label="Ocultar saldo" class="w-8 h-8 rounded-full flex items-center justify-center text-outline hover:text-on-surface hover:bg-surface-container transition-colors" id="toggleSaldoBtn" title="Ocultar Saldo" type="button">
+<span aria-hidden="true" class="material-symbols-outlined text-[19px]" id="toggleSaldoIcon">visibility</span>
+</button>
+</div>
+<div class="flex flex-col sm:flex-row sm:items-baseline gap-space-sm sm:gap-space-md">
+<div class="flex items-baseline gap-1.5 stitch-value">
+<span data-prefix="" class="font-headline-md text-headline-md text-outline font-semibold">R$</span>
+<span data-stitch="balance" class="font-display-hero text-display-hero font-bold text-on-surface tracking-tight" id="saldoValue"></span>
+</div>
+<div data-stitch="balance-badge" class="inline-flex items-center gap-1 px-3 py-1 bg-secondary-container/40 text-on-secondary-container rounded-full self-start"></div>
+</div>
+</div>
+<!-- Micro breakdown metrics -->
+<div class="mt-space-lg pt-space-md bg-surface-container-low rounded-xl px-space-md py-space-sm flex flex-wrap items-center justify-between gap-space-sm relative z-10 stitch-summary">
+<div class="flex items-center gap-space-xs">
+<span class="w-2.5 h-2.5 rounded-full bg-secondary"></span>
+<span class="font-body-sm text-body-sm text-on-surface-variant">Receitas:</span>
+<span data-stitch="income" class="font-headline-md text-body-sm font-bold text-on-surface"></span>
+</div>
+<div class="h-4 w-px bg-outline-variant hidden sm:block"></div>
+<div class="flex items-center gap-space-xs">
+<span class="w-2.5 h-2.5 rounded-full bg-tertiary"></span>
+<span class="font-body-sm text-body-sm text-on-surface-variant">Despesas:</span>
+<span data-stitch="spent-summary" class="font-headline-md text-body-sm font-bold text-on-surface"></span>
+</div>
+<div class="h-4 w-px bg-outline-variant hidden sm:block"></div>
+<a data-stitch-link="month" data-list-month="" href="#lancamentos" class="flex items-center gap-1 text-primary cursor-pointer hover:underline">
+<span class="font-label-caps text-label-caps uppercase tracking-wider font-bold">Detalhes</span>
+<span aria-hidden="true" class="material-symbols-outlined text-[15px]">arrow_forward</span>
+</a>
+</div>
+</div>
+<!-- Card 2: Saldo até o Próximo Salário -->
+<div class="relative overflow-hidden bg-surface-container-lowest rounded-lg p-space-lg shadow-[0_4px_24px_-4px_rgba(15,23,42,0.05),0_2px_8px_-2px_rgba(15,23,42,0.03)] flex flex-col justify-between transition-all hover:shadow-[0_8px_30px_-4px_rgba(15,23,42,0.08)] stitch-card stitch-expense">
+<!-- Subtle Decorative Accent -->
+<div class="absolute -top-10 -right-10 w-44 h-44 bg-secondary-fixed/40 rounded-full blur-3xl pointer-events-none"></div>
+<div class="flex flex-col gap-space-md relative z-10">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-space-xs">
+<span class="w-2 h-2 rounded-full bg-secondary"></span>
+<span class="font-label-caps text-label-caps uppercase tracking-wider text-outline">Até o próximo salário</span>
+</div>
+<span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-surface-container-high font-body-sm text-body-sm font-semibold text-on-surface"><span aria-hidden="true" class="material-symbols-outlined text-[16px] text-primary">schedule</span><span data-stitch="salary-period"></span><span class="mobile-salary-period" data-stitch="mobile-salary-period"></span></span>
+</div>
+<div class="flex items-baseline gap-1.5 stitch-value">
+<span data-stitch="salary-prefix" class="font-headline-md text-headline-md text-outline font-semibold">R$</span>
+<span data-stitch="salary-balance" class="font-display-hero text-display-hero font-bold text-on-surface tracking-tight"></span>
+</div>
+<div class="spending-pace" data-stitch="pace" hidden>
+<div><span>Ritmo de gastos</span><strong data-stitch="pace-label"></strong></div>
+<div class="spending-pace-track" aria-hidden="true"><span data-stitch="pace-fill"></span></div>
+</div>
+<p data-stitch="salary-note" class="font-body-sm text-body-sm text-on-surface-variant"></p>
+</div>
+<!-- Daily quota info badge -->
+<div class="mt-space-md pt-space-sm bg-surface-container-low rounded-xl px-space-md py-space-sm flex items-center justify-between relative z-10 stitch-summary">
+<div class="flex items-center gap-2">
+<span aria-hidden="true" class="material-symbols-outlined text-secondary text-[20px]">check_circle</span>
+<div class="flex flex-col">
+<span data-stitch="daily" class="font-body-sm text-body-sm font-bold text-on-surface"></span>
+<span data-stitch="salary-daily-note" class="font-label-caps text-label-caps text-on-surface-variant"></span>
+</div>
+</div>
+<span data-stitch="salary-status" class="px-2.5 py-0.5 rounded-full bg-secondary-container/50 text-on-secondary-container font-label-caps text-label-caps uppercase font-bold tracking-wide"></span>
+</div>
+</div>
+</div>
+<!-- Middle Section: Analytics & Spending Breakdown (Gastos) -->
+<section class="mobile-quick" aria-labelledby="mobile-quick-label">
+<div class="mobile-quick-head"><h2 id="mobile-quick-label">Ações rápidas</h2><small>Deslize para ver mais</small></div>
+<div class="mobile-quick-strip">
+<a class="mobile-quick-primary" href="#novo"><span class="material-symbols-outlined" aria-hidden="true">add</span>Novo</a>
+<a href="#lancamentos" data-list-month=""><span class="material-symbols-outlined" aria-hidden="true">receipt_long</span>Extrato</a>
+<button type="button" data-mobile-spending><span class="material-symbols-outlined" aria-hidden="true">trending_up</span>Gastos</button>
+<button type="button" disabled aria-label="Pix indisponível"><span class="material-symbols-outlined" aria-hidden="true">payments</span>Pix</button>
+<button type="button" disabled aria-label="Transferir indisponível"><span class="material-symbols-outlined" aria-hidden="true">sync_alt</span>Transferir</button>
+<button type="button" disabled aria-label="Cartões indisponíveis"><span class="material-symbols-outlined" aria-hidden="true">credit_card</span>Cartões</button>
+</div>
+</section>
+<div class="bg-surface-container-lowest rounded-lg p-space-lg shadow-[0_4px_24px_-4px_rgba(15,23,42,0.05),0_2px_8px_-2px_rgba(15,23,42,0.03)] flex flex-col gap-space-lg stitch-card stitch-spending">
+<!-- Header of Section -->
+<div class="flex flex-col md:flex-row md:items-center justify-between gap-space-md stitch-spending-head">
+<div class="flex flex-col gap-0.5">
+<div class="flex items-center gap-space-xs">
+<h2 class="font-headline-lg text-headline-md font-bold text-on-surface tracking-tight"><span class="stitch-desktop-title">Gastos</span><span class="stitch-mobile-title">Gastos Semanais</span></h2>
+<span data-stitch="analysis-badge" class="inline-flex items-center px-2 py-0.5 rounded-full bg-secondary-container/40 text-on-secondary-container font-label-caps text-label-caps font-bold"></span>
+</div>
+<p data-stitch="analysis-copy" class="font-body-sm text-body-sm text-on-surface-variant"></p>
+<p class="mobile-chart-total">Total gasto: <strong data-stitch="mobile-spent"></strong></p>
+</div>
+<!-- Categories Pills Selector -->
+<div aria-label="Categoria dos gastos" role="group" class="flex items-center gap-1.5 pb-1 max-w-full stitch-pills flex-wrap">
+<button aria-pressed="true" data-spend-category="" class="category-pill px-3.5 py-1.5 rounded-full font-headline-md text-body-sm font-semibold transition-all" type="button">Todos</button>
+<button aria-pressed="false" data-spend-category="Alimentação" class="category-pill px-3.5 py-1.5 rounded-full font-headline-md text-body-sm font-semibold transition-all hover:bg-surface-container hover:text-on-surface" type="button">Alimentação</button>
+<button aria-pressed="false" data-spend-category="Moradia" class="category-pill px-3.5 py-1.5 rounded-full font-headline-md text-body-sm font-semibold transition-all hover:bg-surface-container hover:text-on-surface" type="button">Moradia</button>
+<button aria-pressed="false" data-spend-category="Transporte" class="category-pill px-3.5 py-1.5 rounded-full font-headline-md text-body-sm font-semibold transition-all hover:bg-surface-container hover:text-on-surface" type="button">Transporte</button>
+<button aria-pressed="false" data-spend-category="Lazer" class="category-pill px-3.5 py-1.5 rounded-full font-headline-md text-body-sm font-semibold transition-all hover:bg-surface-container hover:text-on-surface" type="button">Lazer</button>
+<button aria-pressed="false" data-spend-category="Outras despesas" class="category-pill px-3.5 py-1.5 rounded-full font-headline-md text-body-sm font-semibold transition-all hover:bg-surface-container hover:text-on-surface" type="button">Outros</button>
+</div>
+</div>
+<!-- Chart Canvas / Visualization Block -->
+<div aria-live="polite" data-stitch="chart" class="spend-data"></div>
+</div>
+<!-- Bottom Section: Lançamentos Recentes -->
+<div class="bg-surface-container-lowest rounded-lg p-space-lg shadow-[0_4px_24px_-4px_rgba(15,23,42,0.05),0_2px_8px_-2px_rgba(15,23,42,0.03)] flex flex-col gap-space-md stitch-card home-recent">
+<!-- Header of Transactions -->
+<div class="flex items-center justify-between stitch-recent-head">
+<div class="flex items-center gap-space-sm">
+<h2 class="font-headline-lg text-headline-md font-bold text-on-surface tracking-tight">Lançamentos Recentes</h2>
+<span data-stitch="recent-count" class="px-2.5 py-0.5 bg-surface-container-high text-on-surface rounded-full font-label-caps text-label-caps font-bold"></span>
+</div>
+<a data-list-month="" class="inline-flex items-center gap-1 font-headline-md text-body-sm font-semibold text-primary hover:text-on-primary-fixed-variant transition-colors group" href="#lancamentos">
+<span>Ver todos</span>
+<span aria-hidden="true" class="material-symbols-outlined text-[18px] group-hover:translate-x-0.5 transition-transform">arrow_forward</span>
+</a>
+</div>
+<!-- Transaction List -->
+<div data-stitch="recent-rows" class="flex flex-col gap-space-xs divide-y-0"></div>
+</div>
+</div>
+</template>
+<template id="stitch-chart">
+<div class="grid grid-cols-1 lg:grid-cols-12 gap-space-lg items-center stitch-chart">
+<!-- Main Visual Weekly Evolution Chart -->
+<div class="lg:col-span-8 flex flex-col gap-space-md">
+<!-- SVG Interactive Area / Curved Flow Chart -->
+<div class="relative w-full h-56 bg-surface-container-low/50 rounded-lg p-space-md flex flex-col justify-between overflow-hidden stitch-figure">
+<!-- Background Gridlines -->
+<div class="absolute inset-x-space-md top-10 h-px bg-outline-variant/30"></div>
+<div class="absolute inset-x-space-md top-24 h-px bg-outline-variant/30"></div>
+<div class="absolute inset-x-space-md top-38 h-px bg-outline-variant/30"></div>
+<!-- Inline Smooth Sparkline SVG Area -->
+<svg preserveAspectRatio="none" viewBox="0 0 500 140" aria-hidden="true" class="w-full h-40 overflow-visible relative z-10" fill="none">
+<defs>
+<lineargradient id="chartGradient" x1="0" x2="0" y1="0" y2="1">
+<stop offset="0%" stop-color="#4338ca" stop-opacity="0.32" />
+<stop offset="100%" stop-color="#4338ca" stop-opacity="0.0" />
+</lineargradient>
+</defs>
+<!-- Gradient Area -->
+<path data-stitch="area" d="M 30,85 C 90,85 110,35 170,35 C 230,35 250,95 310,95 C 370,95 400,105 470,105 L 470,140 L 30,140 Z" fill="url(#chartGradient)" />
+<!-- Line Curve -->
+<path data-stitch="line" d="M 30,85 C 90,85 110,35 170,35 C 230,35 250,95 310,95 C 370,95 400,105 470,105" stroke="#4338ca" stroke-linecap="round" stroke-width="3" />
+<!-- Interactive Points -->
+<!-- Week 1: 850 -->
+<circle data-point="0" class="fill-surface-container-lowest stroke-primary stroke-[3] hover:scale-125 transition-transform" cx="30" cy="85" r="4.5" />
+<!-- Week 2: 1.120 (Peak) -->
+<circle data-point="1" class="fill-surface-container-lowest stroke-primary stroke-[3.5] hover:scale-125 transition-transform" cx="170" cy="35" r="6" />
+<!-- Week 3: 740 -->
+<circle data-point="2" class="fill-surface-container-lowest stroke-primary stroke-[3] hover:scale-125 transition-transform" cx="310" cy="95" r="4.5" />
+<!-- Week 4: 640 -->
+<circle data-point="3" class="fill-surface-container-lowest stroke-primary stroke-[3] hover:scale-125 transition-transform" cx="470" cy="105" r="4.5" />
+</svg>
+<!-- X-Axis Labels with values -->
+<div data-week-labels="" class="grid grid-cols-4 w-full pt-space-xs text-center z-20">
+<div class="flex flex-col items-center">
+<span class="font-headline-md text-body-sm font-bold text-on-surface">R$ 850</span>
+<span class="font-label-caps text-label-caps text-outline uppercase tracking-wider">Sem 1 (1-7)</span>
+</div>
+<div class="flex flex-col items-center">
+<span class="font-headline-md text-body-sm font-bold text-primary">R$ 1.120</span>
+<span class="font-label-caps text-label-caps text-primary uppercase tracking-wider font-bold">Sem 2 (8-14)</span>
+</div>
+<div class="flex flex-col items-center">
+<span class="font-headline-md text-body-sm font-bold text-on-surface">R$ 740</span>
+<span class="font-label-caps text-label-caps text-outline uppercase tracking-wider">Sem 3 (15-21)</span>
+</div>
+<div class="flex flex-col items-center">
+<span class="font-headline-md text-body-sm font-bold text-on-surface">R$ 640</span>
+<span class="font-label-caps text-label-caps text-outline uppercase tracking-wider">Sem 4 (22-30)</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Lateral Categorical Distribution Breakdown -->
+<div class="lg:col-span-4 flex flex-col gap-space-sm bg-surface-container-low rounded-lg p-space-md stitch-ranking">
+<span class="font-label-caps text-label-caps uppercase tracking-wider text-outline">Maiores concentrações</span>
+<div data-stitch="ranking" class="flex flex-col gap-space-sm"></div>
+<div class="pt-2 flex items-center justify-between text-body-sm text-outline">
+<span class="text-xs">Média diária no mês</span>
+<span data-stitch="ranking-daily" class="font-headline-md text-body-sm font-semibold text-on-surface"></span>
+</div>
+</div>
+</div>
+</template>
+<script src="./assets/js/app.js"></script>
+</html>

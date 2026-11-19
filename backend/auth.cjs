@@ -13,16 +13,24 @@ const COOKIE = 'finflow_session';
 const SESSION_SECONDS = 7 * 24 * 60 * 60;
 const WINDOW_MS = 15 * 60 * 1000;
 const MAX_ATTEMPTS = 12;
-const ROOT = join(__dirname, '..');
+const ROOT = join(__dirname, '..', 'public');
 const DUMMY_SALT = randomBytes(16);
 const DUMMY_HASH = randomBytes(64);
 const assets = new Map([
-  ['/', ['Prototipo.html', 'text/html; charset=utf-8']],
-  ['/Prototipo.html', ['Prototipo.html', 'text/html; charset=utf-8']],
-  ['/stitch-home.css', ['stitch-home.css', 'text/css; charset=utf-8']],
-  ['/FinFlow-avatar.jpg', ['FinFlow-avatar.jpg', 'image/jpeg']],
-  ...['InterVariable.woff2', 'HankenGrotesk.woff2', 'PlusJakartaSans.woff2', 'MaterialSymbols.woff2']
-    .map(name => ['/' + name, [name, 'font/woff2']]),
+  ["/",["index.html","text/html; charset=utf-8"]],
+  ["/index.html",["index.html","text/html; charset=utf-8"]],
+  ["/Prototipo.html",["index.html","text/html; charset=utf-8"]],
+  ["/assets/css/app.css",["assets/css/app.css","text/css; charset=utf-8"]],
+  ["/assets/css/auth.css",["assets/css/auth.css","text/css; charset=utf-8"]],
+  ["/assets/css/transactions.css",["assets/css/transactions.css","text/css; charset=utf-8"]],
+  ["/assets/css/stitch-home.css",["assets/css/stitch-home.css","text/css; charset=utf-8"]],
+  ["/assets/js/app.js",["assets/js/app.js","text/javascript; charset=utf-8"]],
+  ["/assets/images/FinFlow-avatar.jpg",["assets/images/FinFlow-avatar.jpg","image/jpeg"]],
+  ["/assets/fonts/InterVariable.woff2",["assets/fonts/InterVariable.woff2","font/woff2"]],
+  ["/assets/fonts/HankenGrotesk.woff2",["assets/fonts/HankenGrotesk.woff2","font/woff2"]],
+  ["/assets/fonts/PlusJakartaSans.woff2",["assets/fonts/PlusJakartaSans.woff2","font/woff2"]],
+  ["/assets/fonts/MaterialSymbols.woff2",["assets/fonts/MaterialSymbols.woff2","font/woff2"]],
+  ["/assets/fonts/AuthSymbols.woff2",["assets/fonts/AuthSymbols.woff2","font/woff2"]],
 ]);
 
 class HttpError extends Error {
@@ -57,7 +65,7 @@ async function readJson(request) {
   return body;
 }
 
-async function readCredentials(request) {
+async function readCredentials(request, isRegister) {
   const body = await readJson(request);
   const email = typeof body?.email === 'string' ? body.email.trim().toLowerCase() : '';
   const password = body?.password;
@@ -65,12 +73,20 @@ async function readCredentials(request) {
       || typeof password !== 'string' || password.length === 0 || Buffer.byteLength(password) > 1024) {
     throw new HttpError(400, 'invalid_input');
   }
-  return { email, password };
+  const name = isRegister ? body.name : undefined;
+  const salaryDay = isRegister ? body.salaryDay : undefined;
+  const remember = isRegister ? undefined : body.remember;
+  if ((name !== undefined && (typeof name !== 'string' || !name.trim() || name.trim().length > 120))
+      || (salaryDay !== undefined && !['1', '5', '10', '15', '20', '25', '30'].includes(salaryDay))
+      || (remember !== undefined && typeof remember !== 'boolean')) {
+    throw new HttpError(400, 'invalid_input');
+  }
+  return { email, password, name: name?.trim(), salaryDay, remember };
 }
 
 function cookieHeaders(token, maxAge) {
   return [
-    COOKIE + '=' + token + '; Path=/api; HttpOnly; SameSite=Strict; Max-Age=' + maxAge,
+    COOKIE + '=' + token + '; Path=/api; HttpOnly; SameSite=Strict' + (maxAge === null ? '' : '; Max-Age=' + maxAge),
     COOKIE + '=; Path=/api/auth; HttpOnly; SameSite=Strict; Max-Age=0',
   ];
 }
@@ -111,10 +127,21 @@ async function start({ databasePath = join(__dirname, '.local', 'auth.sqlite'), 
       attempts INTEGER NOT NULL
     ) STRICT;
   `);
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    const columns = db.prepare('PRAGMA table_info(users)').all();
+    if (!columns.some(column => column.name === 'name')) db.exec('ALTER TABLE users ADD COLUMN name TEXT');
+    if (!columns.some(column => column.name === 'salary_day')) db.exec('ALTER TABLE users ADD COLUMN salary_day TEXT');
+    db.exec('COMMIT');
+  } catch (error) {
+    db.exec('ROLLBACK');
+    db.close();
+    throw error;
+  }
   const getUser = db.prepare('SELECT * FROM users WHERE email = ?');
-  const addUser = db.prepare('INSERT INTO users(email, password_salt, password_hash) VALUES (?, ?, ?) ON CONFLICT(email) DO NOTHING');
+  const addUser = db.prepare('INSERT INTO users(email, password_salt, password_hash, name, salary_day) VALUES (?, ?, ?, ?, ?) ON CONFLICT(email) DO NOTHING');
   const getSession = db.prepare(`
-    SELECT users.id, users.email FROM sessions JOIN users ON users.id = sessions.user_id
+    SELECT users.id, users.email, users.name, users.salary_day AS salaryDay FROM sessions JOIN users ON users.id = sessions.user_id
     WHERE sessions.token_hash = ? AND sessions.expires_at > ?
   `);
   const deleteSession = db.prepare('DELETE FROM sessions WHERE token_hash = ?');
@@ -129,14 +156,18 @@ async function start({ databasePath = join(__dirname, '.local', 'auth.sqlite'), 
   `);
   let activeHashes = 0;
 
+  function account(id, email, name, salaryDay) {
+    return { id, email, ...(name && { name }), ...(salaryDay && { salaryDay }) };
+  }
+
   function requireSession(request) {
     const user = getSession.get(sessionHash(request), Date.now());
     if (!user) throw new HttpError(401, 'unauthenticated');
-    return user;
+    return account(user.id, user.email, user.name, user.salaryDay);
   }
 
   async function authenticate(request, response, isRegister) {
-    const { email, password } = await readCredentials(request);
+    const { email, password, name, salaryDay, remember } = await readCredentials(request, isRegister);
     if (isRegister && [...password].length < 15) throw new HttpError(400, 'invalid_input');
 
     const now = Date.now();
@@ -158,9 +189,9 @@ async function start({ databasePath = join(__dirname, '.local', 'auth.sqlite'), 
     }
 
     if (isRegister) {
-      const result = addUser.run(email, salt, hash);
+      const result = addUser.run(email, salt, hash, name ?? null, salaryDay ?? null);
       if (!result.changes) throw new HttpError(409, 'email_unavailable');
-      return json(response, 201, { user: { id: result.lastInsertRowid, email } });
+      return json(response, 201, { user: account(result.lastInsertRowid, email, name, salaryDay) });
     }
 
     if (!timingSafeEqual(hash, user?.password_hash ?? DUMMY_HASH) || !user) {
@@ -168,10 +199,11 @@ async function start({ databasePath = join(__dirname, '.local', 'auth.sqlite'), 
     }
     const token = randomBytes(32).toString('base64url');
     deleteExpired.run(now);
-    addSession.run(tokenHash(token), user.id, now + SESSION_SECONDS * 1000);
+    const duration = remember === true ? 30 * 24 * 60 * 60 : SESSION_SECONDS;
+    addSession.run(tokenHash(token), user.id, now + duration * 1000);
     deleteSession.run(sessionHash(request));
-    response.setHeader('Set-Cookie', cookieHeaders(token, SESSION_SECONDS));
-    return json(response, 200, { user: { id: user.id, email } });
+    response.setHeader('Set-Cookie', cookieHeaders(token, remember === false ? null : duration));
+    return json(response, 200, { user: account(user.id, email, user.name, user.salary_day) });
   }
 
   const server = createServer({ requestTimeout: 15000, headersTimeout: 10000 }, async (request, response) => {
@@ -181,13 +213,26 @@ async function start({ databasePath = join(__dirname, '.local', 'auth.sqlite'), 
       if (request.headers.host !== expectedHost) throw new HttpError(403, 'host_not_allowed');
       const route = request.method + ' ' + pathname;
 
-      if (route.startsWith('POST /api/auth/') || route === 'POST /api/transactions') {
+      const deleteTransaction = request.method === 'DELETE' && pathname.startsWith('/api/transactions/');
+      const jsonPost = route.startsWith('POST /api/auth/') || route === 'POST /api/transactions';
+      if (jsonPost || deleteTransaction) {
         const origin = request.headers.origin;
         if (origin !== undefined && origin !== 'http://' + expectedHost) {
           throw new HttpError(403, 'origin_not_allowed');
         }
         const type = request.headers['content-type']?.split(';')[0].trim().toLowerCase();
-        if (type !== 'application/json') throw new HttpError(415, 'json_required');
+        if (jsonPost && type !== 'application/json') throw new HttpError(415, 'json_required');
+      }
+
+      if (deleteTransaction) {
+        const user = requireSession(request);
+        const rawId = pathname.slice('/api/transactions/'.length);
+        const id = Number(rawId);
+        if (!/^[1-9]\d*$/.test(rawId) || !Number.isSafeInteger(id)) {
+          throw new HttpError(400, 'invalid_transaction');
+        }
+        if (!transactions.remove(user.id, id)) throw new HttpError(404, 'not_found');
+        return response.writeHead(204, { 'Cache-Control': 'no-store' }).end();
       }
 
       switch (route) {

@@ -99,3 +99,28 @@ test('limita tentativas simultâneas e persiste o orçamento entre reinicializa�
   assert.equal(blocked.status, 429);
   assert.ok(Number(blocked.headers.get('retry-after')) > 0);
 });
+
+test('salva o perfil do cadastro e respeita a duração escolhida no login', async t => {
+  const { server, url } = await start({ port: 0, databasePath: ':memory:' });
+  t.after(() => close(server));
+  const post = (route, fields) => fetch(url + '/api/auth/' + route, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...credentials, ...fields }),
+  });
+  assert.equal((await post('register', { salaryDay: '45' })).status, 400);
+  const profile = { name: 'Pessoa Teste', salaryDay: '15' };
+  const registered = await post('register', profile);
+  assert.equal(registered.status, 201);
+  for (const remember of [true, false]) {
+    const login = await post('login', { remember });
+    assert.equal(login.status, 200);
+    const [cookie] = login.headers.getSetCookie();
+    if (remember) assert.match(cookie, /Max-Age=2592000$/);
+    else assert.doesNotMatch(cookie, /Max-Age|Expires/i);
+    const session = await fetch(url + '/api/auth/session', {
+      headers: { Cookie: cookie.split(';')[0] },
+    });
+    assert.deepEqual((await session.json()).user, { id: 1, email: 'pessoa@example.test', ...profile });
+  }
+});
