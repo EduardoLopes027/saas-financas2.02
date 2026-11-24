@@ -307,7 +307,7 @@ function transactionRow(item){
     + '<td role="cell"><span class="transactions-status" data-status="' + (status ? status.toLowerCase() : 'unknown') + '">'
     + (status ? '<span aria-hidden="true">' + (status === 'Pago' ? '✓' : '◷') + '</span> ' : '') + (status || 'Não informado') + '</span></td>'
     + '<td role="cell" class="transactions-amount" data-tone="' + tone + '">' + signedMoney(item.amount, transfer ? '' : income ? '+' : '−') + '</td>'
-    + '<td role="cell" class="transactions-action">' + receiptLink(item) + '<button type="button" class="transactions-delete" data-delete-id="' + item.id + '" aria-label="Excluir lançamento ' + escape(item.description) + ' de ' + date + '" title="Excluir lançamento"' + (deletingTransactionIds.has(item.id) ? ' disabled' : '') + '><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3m3 0-1 13H7L6 7m4 4v6m4-6v6"/></svg></button></td>'
+    + '<td role="cell" class="transactions-action"><div class="transactions-row-actions">' + receiptLink(item) + '<button type="button" class="transactions-delete" data-delete-id="' + item.id + '" aria-label="Excluir lançamento ' + escape(item.description) + ' de ' + date + '" title="Excluir lançamento"' + (deletingTransactionIds.has(item.id) ? ' disabled' : '') + '><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3m3 0-1 13H7L6 7m4 4v6m4-6v6"/></svg></button></div></td>'
     + '</tr>';
 }
 
@@ -408,39 +408,70 @@ function exportTransactions(){
   setTimeout(() => URL.revokeObjectURL(file),1000);
 }
 
+function transactionDeleteNotice(text, error = false){
+  const notice = main.querySelector('.transactions-notice');
+  if(!notice){message = text;return;}
+  notice.setAttribute('role',error ? 'alert' : 'status');
+  notice.hidden = false;
+  notice.textContent = text;
+}
+
 async function deleteTransaction(id){
-  if(!Number.isSafeInteger(id) || id <= 0 || deletingTransactionIds.has(id)) return;
-  const item = entries.find(entry => entry.id === id);
-  if(!item || !window.confirm('Excluir o lançamento “' + item.description + '” de ' + transactionDate.format(new Date(item.date + 'T00:00:00Z')) + '?')) return;
+  if(!entries.some(item=>item.id === id) || deletingTransactionIds.has(id)) return;
   const epoch = accountEpoch;
+  const selector = '.transactions-delete[data-delete-id="' + id + '"]';
+  const button = main.querySelector(selector);
+  const row = button?.closest('tr');
+  const nextId = (row?.nextElementSibling ?? row?.previousElementSibling)
+    ?.querySelector('.transactions-delete')?.dataset.deleteId;
+  const restoreFocus = button === document.activeElement;
   deletingTransactionIds.add(id);
-  const button = main.querySelector('.transactions-delete[data-delete-id="' + id + '"]');
   if(button) button.disabled = true;
+  let alreadyUnavailable = false;
   try{
     if(appMode !== 'demo') await apiRequest('/api/transactions/' + id, undefined, 'DELETE');
-    if(epoch !== accountEpoch) return;
-    entries = entries.filter(entry => entry.id !== id);
-    if(main.querySelector('.transactions-table')){
-      updateTransactionPeriod();
-      listResults();
-      const notice = main.querySelector('.transactions-notice');
-      notice.textContent = 'Lançamento excluído.';
-      notice.hidden = false;
-      notice.setAttribute('role','status');
-    }
   }catch(error){
     if(epoch !== accountEpoch) return;
-    const notice = main.querySelector('.transactions-notice');
-    if(notice){
-      notice.textContent = 'Não foi possível excluir o lançamento. Tente novamente.';
-      notice.hidden = false;
-      notice.setAttribute('role','alert');
-    }else message = 'Não foi possível excluir o lançamento. Tente novamente.';
+    if(error.status === 401){expireAccount();return;}
+    if(error.status !== 404){
+      transactionDeleteNotice('Não foi possível excluir o lançamento. Tente novamente.',true);
+      if(restoreFocus && document.activeElement === document.body){
+        const retry = main.querySelector(selector);
+        if(retry){retry.disabled = false;retry.focus();}
+      }
+      return;
+    }
+    alreadyUnavailable = true;
   }finally{
     deletingTransactionIds.delete(id);
-    const currentButton = main.querySelector('.transactions-delete[data-delete-id="' + id + '"]');
+    const currentButton = main.querySelector(selector);
     if(currentButton) currentButton.disabled = false;
   }
+  if(epoch !== accountEpoch) return;
+  entries = entries.filter(entry => entry.id !== id);
+  if(main.querySelector('.transactions-table')){
+    const moveFocus = restoreFocus && [document.body,button].includes(document.activeElement);
+    updateTransactionPeriod();
+    listResults();
+    if(moveFocus){
+      const target = main.querySelector('.transactions-delete[data-delete-id="' + nextId + '"]:enabled')
+        ?? main.querySelector('.transactions-delete:enabled')
+        ?? main.querySelector('#transactions-query');
+      target?.focus({preventScroll:true});
+    }
+    transactionDeleteNotice(alreadyUnavailable ? 'O lançamento já estava indisponível.' : 'Lançamento excluído.');
+  }
+}
+
+function confirmTransactionDeletion(button, dialog){
+  const id = Number(button.dataset.deleteId);
+  const item = entries.find(entry=>entry.id === id);
+  if(!item || deletingTransactionIds.has(id) || dialog.open) return;
+  const date = transactionDate.format(new Date(item.date + 'T00:00:00Z'));
+  dialog.querySelector('p').textContent = '“' + item.description + '” · ' + date;
+  dialog.dataset.deleteId = id;
+  dialog.returnValue = '';
+  dialog.showModal();
 }
 
 function mountTransactions(){
@@ -504,9 +535,15 @@ function mountTransactions(){
     listResults();
   });
   main.querySelector('.transactions-export').addEventListener('click',exportTransactions);
+  const deleteDialog = main.querySelector('.transactions-delete-dialog');
+  deleteDialog.addEventListener('close',()=>{
+    if(deleteDialog.isConnected && deleteDialog.returnValue === 'delete'){
+      deleteTransaction(Number(deleteDialog.dataset.deleteId));
+    }
+  });
   main.querySelector('.transactions-table tbody').addEventListener('click', event => {
     const button = event.target.closest('button[data-delete-id]');
-    if(button) deleteTransaction(Number(button.dataset.deleteId));
+    if(button){confirmTransactionDeletion(button,deleteDialog);return;}
     const receipt = event.target.closest('[data-receipt-id]');
     if(receipt) downloadDemoReceipt(Number(receipt.dataset.receiptId));
   });
@@ -881,7 +918,7 @@ accountChannel?.addEventListener('message',event=>{
   if(event.data==='account-changed'&&appMode==='account'&&!authBusy) restoreAccount();
 });
 document.addEventListener('visibilitychange',()=>{
-  if(document.visibilityState==='visible'&&accountUser&&!authBusy&&!saveBusy&&accountState==='ready') restoreAccount();
+  if(document.visibilityState==='visible'&&accountUser&&!authBusy&&!saveBusy&&!deletingTransactionIds.size&&accountState==='ready') restoreAccount();
 });
 if(appMode==='checking') restoreAccount();
 else render(false);

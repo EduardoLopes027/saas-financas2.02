@@ -388,23 +388,53 @@
 .transactions-table th:nth-child(4) { width: 16%; }
 .transactions-table th:nth-child(5) { width: 12%; }
 .transactions-table th:nth-child(6) { width: 15%; }
-.transactions-table th:last-child { width: 6%; border-start-end-radius: 22px; }
+.transactions-table th:last-child { width: 84px; border-start-end-radius: 22px; }
 .transactions-table :is(th, td):last-child { text-align: center; }
 
 .transactions-table .transactions-action { padding-inline: 2px; white-space: nowrap; }
+.transactions-row-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  vertical-align: middle;
+}
 .transactions-delete {
-  display: inline-grid;
-  place-items: center;
-  width: 40px;
-  height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 36px;
+  width: 36px;
+  min-height: 36px;
+  height: 36px;
+  padding: 0;
   border: 0;
   border-radius: 50%;
   background: transparent;
   color: var(--transaction-expense);
   cursor: pointer;
 }
+.transactions-delete svg { flex: none; }
 .transactions-delete:hover:not(:disabled) { background: #fcecec; }
+.transactions-delete:disabled { opacity: .55; cursor: wait; }
 .transactions-delete:focus-visible { outline: 2px solid var(--transaction-indigo); outline-offset: 2px; }
+.transactions-delete-dialog {
+  width: min(420px, calc(100vw - 32px));
+  max-width: none;
+  padding: 22px;
+  border: 0;
+  border-radius: 22px;
+  color: inherit;
+  box-shadow: 0 12px 36px #22284c33;
+}
+.transactions-delete-dialog::backdrop { background: #0f172a66; }
+.transactions-delete-dialog p { overflow-wrap: anywhere; }
+.transactions-delete-dialog-actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 8px; }
+.transactions-delete-dialog-actions button[value="delete"] {
+  background: #b91c1c;
+  border-color: #b91c1c;
+  color: white;
+}
 
 .transactions-table tbody tr:nth-child(even) {
   background: #fbfcff;
@@ -629,6 +659,7 @@
 
   .transactions-filters .transactions-types {
     flex: 1 1 100%;
+    flex-wrap: wrap;
   }
 
   .transactions-types button {

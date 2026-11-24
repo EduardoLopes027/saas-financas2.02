@@ -142,6 +142,16 @@
         <nav class="transactions-pagination" aria-label="Páginas de lançamentos"></nav>
       </div>
     </section>
+    <dialog class="transactions-delete-dialog" aria-labelledby="transactions-delete-title" aria-describedby="transactions-delete-description">
+      <form method="dialog">
+        <h2 id="transactions-delete-title">Excluir lançamento?</h2>
+        <p id="transactions-delete-description"></p>
+        <div class="transactions-delete-dialog-actions">
+          <button value="cancel" autofocus>Cancelar</button>
+          <button value="delete">Excluir lançamento</button>
+        </div>
+      </form>
+    </dialog>
   </div>
 </template>
 <!-- Home e gráfico adaptados diretamente do code.html exportado pelo Stitch. -->
