@@ -1,8 +1,10 @@
 
 const entryTypes = {Despesa:'arrow_downward', Receita:'arrow_upward', Transferência:'swap_horiz'};
 const entryFrequencies = ['Semanal','Mensal','Anual'];
+const receiptLimit = 3 * 1024 * 1024;
 const receiptTypes = {'application/pdf':'pdf','image/png':'png','image/jpeg':'jpe?g'};
 const entryIconPaths = {
+  edit:'m4 16-1 5 5-1L20 8l-4-4L4 16Zm10-10 4 4',
   arrow_back:'M19 12H5m7 7-7-7 7-7',
   arrow_downward:'M12 5v14m-7-7 7 7 7-7',
   arrow_upward:'M12 19V5m-7 7 7-7 7 7',
@@ -27,13 +29,20 @@ const entrySelect = (name, values, selected, placeholder = 'Selecione') =>
   '<select name="' + name + '" aria-describedby="entry-error-' + name + '">'
   + (placeholder ? '<option value="">' + placeholder + '</option>' : '') + options(values,selected) + '</select>';
 
-function mountEntry(){
-  const data = draft ?? blankEntry();
+function mountEntry(item = null){
+  const baseline = item ? {
+    ...blankEntry(),
+    editId:item.id, type:item.type, category:item.category, description:item.description, date:item.date,
+    amount:(item.amount / 100).toFixed(2).replace('.',','),
+    paymentMethod:item.paymentMethod ?? '', destinationPaymentMethod:item.destinationPaymentMethod ?? '',
+    status:item.status ?? '', notes:item.notes ?? '', receipt:item.receipt ?? null
+  } : blankEntry();
+  const data = draft && draft.editId === baseline.editId ? draft : baseline;
   main.innerHTML = `
     <div class="entry-intro">
       <a data-entry-back href="#lancamentos">${entryIcon('arrow_back')} Voltar para Lançamentos</a>
-      <h1 tabindex="-1">Novo Lançamento</h1>
-      <div class="entry-intro-details"><p>Registre uma receita, despesa ou transferência e acompanhe o impacto no seu saldo.</p>
+      <h1 tabindex="-1">${item ? 'Editar lançamento' : 'Novo Lançamento'}</h1>
+      <div class="entry-intro-details"><p>${item ? 'Altere os dados do lançamento selecionado e confira o impacto no saldo.' : 'Registre uma receita, despesa ou transferência e acompanhe o impacto no seu saldo.'}</p>
       <span class="entry-badge">Sincronização bancária indisponível</span></div>
     </div>
     <div class="entry-layout">
@@ -63,12 +72,12 @@ function mountEntry(){
             <button type="button" data-entry-date="yesterday">Ontem</button>
             <button type="button" data-entry-date="other">Outra data</button>
           </div></div>
-          <div>${entryField('paymentMethod','Conta / meio de pagamento *',entrySelect('paymentMethod',paymentMethods,data.paymentMethod))}
+          <div>${entryField('paymentMethod',item && !item.paymentMethod && data.type !== 'Transferência' ? 'Conta / meio de pagamento' : 'Conta / meio de pagamento *',entrySelect('paymentMethod',paymentMethods,data.paymentMethod))}
           <small data-entry-text="payment-help"></small></div>
           ${entryField('destinationPaymentMethod','Conta / meio de destino *',entrySelect('destinationPaymentMethod',paymentMethods,data.destinationPaymentMethod))}
-          ${entryField('status','Status',entrySelect('status',transactionStatuses,data.status,''))}
+          ${entryField('status','Status',entrySelect('status',transactionStatuses,data.status,item && !item.status ? 'Não informado' : ''))}
         </div>
-        <div class="entry-scheduling">
+        <div class="entry-scheduling"${item ? ' hidden' : ''}>
           <div><label class="entry-toggle"><input type="checkbox" role="switch" name="repeat"${data.repeat ? ' checked' : ''}>
           <span>Lançamento recorrente<small>Repete o lançamento no intervalo escolhido.</small></span></label>
           <label data-entry-recurrence>Frequência ${entrySelect('recurrence',entryFrequencies,data.recurrence,'')}</label></div>
@@ -85,7 +94,7 @@ function mountEntry(){
           <div class="entry-drop"><input id="entry-receipt" name="receipt" type="file" accept="application/pdf,image/png,image/jpeg,.pdf,.png,.jpg,.jpeg"
           aria-describedby="entry-receipt-help entry-error-receipt">
           <label for="entry-receipt">${entryIcon('cloud_upload')} Escolha ou arraste um comprovante</label>
-          <small id="entry-receipt-help">PDF, PNG ou JPG de até 5 MiB</small></div>
+          <small id="entry-receipt-help">PDF, PNG ou JPG de até 3 MiB</small></div>
           <div class="entry-receipt-selected" hidden><span data-entry-text="receipt"></span><button type="button" data-entry-clear="receipt">Remover</button></div>
           <span class="field-error" id="entry-error-receipt" role="alert"></span>
         </div>
@@ -93,8 +102,8 @@ function mountEntry(){
         <div class="entry-feedback" id="form-status" role="alert"></div>
         <div class="entry-actions">
           <a data-entry-back href="#lancamentos" id="cancel">Cancelar</a>
-          <button type="submit" value="another">Salvar e Criar Outro</button>
-          <button type="submit" value="list" class="entry-primary">${entryIcon('check')} Salvar Lançamento</button>
+          ${item ? '' : '<button type="submit" value="another">Salvar e Criar Outro</button>'}
+          <button type="submit" value="list" class="entry-primary">${entryIcon('check')} ${item ? 'Salvar alterações' : 'Salvar Lançamento'}</button>
         </div>
       </form>
       <aside class="entry-side" aria-label="Prévia e impacto">
@@ -126,7 +135,7 @@ function mountEntry(){
     <div class="entry-toast" role="status"></div>
     <dialog class="entry-dialog"><form method="dialog"><h2>Descartar alterações?</h2><p>Os dados que você digitou neste lançamento serão perdidos.</p>
       <div class="entry-actions"><button value="keep">Continuar editando</button><button class="entry-primary" value="discard">Descartar</button></div></form></dialog>`;
-  wireEntry(data);
+  wireEntry(data,baseline,item);
 }
 
 function parseCents(value){
@@ -186,7 +195,7 @@ function receiptPayload(file){
 }
 
 
-function updateEntryPreview(element,data,cents){
+function updateEntryPreview(element,data,cents,item){
   const text = (name,value) => { main.querySelector('[data-entry-text="' + name + '"]').textContent = value; };
   const today = localCalendarDate();
   const month = today.slice(0,7);
@@ -215,6 +224,10 @@ function updateEntryPreview(element,data,cents){
       }
     }
   }
+  if(valid && item?.date <= today){
+    if(item.type === 'Receita') impact -= item.amount;
+    if(item.type === 'Despesa') impact += item.amount;
+  }
   main.querySelector('.entry-layout').dataset.kind = data.type;
   const icon = main.querySelector('[data-entry-text="icon"]');
   const categoryIcon = categoryIcons[data.category];
@@ -225,7 +238,7 @@ function updateEntryPreview(element,data,cents){
   text('category',data.category || 'Categoria a definir');
   text('preview-date',data.date && element.elements.date.validity.valid ? transactionDate.format(new Date(data.date + 'T00:00:00Z')) : '');
   text('amount',cents ? signedMoney(cents,sign) : '—');
-  text('status',data.status === 'Pago' ? 'Liquidado' : 'Pendente');
+  text('status',data.status === 'Pago' ? 'Liquidado' : data.status || 'Não informado');
   main.querySelector('[data-entry-text="status"]').dataset.status = data.status;
   text('payment',data.paymentMethod
     ? data.paymentMethod + (transfer && data.destinationPaymentMethod ? ' → ' + data.destinationPaymentMethod : '')
@@ -236,6 +249,7 @@ function updateEntryPreview(element,data,cents){
   text('impact',available && valid ? signedMoney(impact,impact < 0 ? '−' : impact > 0 ? '+' : '') : '—');
   text('projected',available && valid ? format(balance + impact) : '—');
   text('impact-note',!available ? 'Saldo indisponível no momento.' : !valid ? 'Informe um valor e uma data para calcular o impacto.'
+    : item ? 'O impacto considera a diferença em relação ao lançamento original.'
     : transfer ? 'Transferências mantêm o saldo consolidado.' : data.date > today ? 'A data futura mantém o saldo de hoje.'
     : data.split ? 'O saldo de hoje considera apenas as parcelas até hoje.' : data.repeat ? 'O saldo inclui as ocorrências até hoje.' : '');
   text('budget-heading',data.type === 'Despesa' && data.category ? 'Meta de ' + data.category : 'Meta de categoria');
@@ -252,14 +266,14 @@ function updateEntryPreview(element,data,cents){
   main.querySelector('.entry-curve polyline').setAttribute('points',points);
 }
 
-function wireEntry(data){
+function wireEntry(data,baseline,item){
   const element = main.querySelector('.entry-form');
   const field = name => element.elements.namedItem(name);
   const status = element.querySelector('#form-status');
-  const original = JSON.stringify(blankEntry());
   let receipt = data.receipt;
   let receiptInvalid = false;
   const read = () => ({
+    ...(item ? {editId:item.id} : {}),
     type:field('kind').value,amount:field('amount').value,date:field('date').value,category:field('category').value,
     description:field('description').value,paymentMethod:field('paymentMethod').value,
     destinationPaymentMethod:field('destinationPaymentMethod').value,status:field('status').value,notes:field('notes').value,
@@ -280,7 +294,7 @@ function wireEntry(data){
     destination.required = transfer;
     destination.closest('label').hidden = !transfer;
     field('category').required = true;
-    field('paymentMethod').required = true;
+    field('paymentMethod').required = !item || transfer || Boolean(item.paymentMethod);
     element.querySelector('[data-entry-text="payment-help"]').textContent = ({
       Pix:'Transferência instantânea via Pix.',
       'Cartão de crédito':'Use a data que deseja registrar no seu fluxo de caixa.',
@@ -305,15 +319,15 @@ function wireEntry(data){
     const activeDate = draft.date === today ? 'today' : draft.date === entryDateOffset(today,0,-1) ? 'yesterday' : 'other';
     element.querySelectorAll('[data-entry-date]').forEach(button=>
       button.setAttribute('aria-pressed',String(button.dataset.entryDate === activeDate)));
-    updateEntryPreview(element,draft,cents);
+    updateEntryPreview(element,draft,cents,item);
   }
   function chooseReceipt(files){
     if(!files.length) return;
     const [file] = files;
     const extension = receiptTypes[file.type];
     receiptInvalid = files.length !== 1 || !extension || !new RegExp('\\.' + extension + '$','i').test(file.name)
-      || file.size === 0 || file.size > 5*1024*1024;
-    error('receipt',receiptInvalid ? 'Selecione um PDF, PNG ou JPG válido de até 5 MiB.' : '');
+      || file.size === 0 || file.size > receiptLimit;
+    error('receipt',receiptInvalid ? 'Selecione um PDF, PNG ou JPG válido de até 3 MiB.' : '');
     if(!receiptInvalid) receipt = file;
     field('receipt').value = '';
     refresh();
@@ -365,7 +379,7 @@ function wireEntry(data){
   const dialog = main.querySelector('.entry-dialog');
   main.querySelectorAll('[data-entry-back]').forEach(link=>link.addEventListener('click',event=>{
     if(saveBusy){event.preventDefault();return;}
-    if(JSON.stringify(read()) === original){draft = null;return;}
+    if(Object.entries(read()).every(([key,value]) => value === baseline[key])){draft = null;return;}
     event.preventDefault();
     dialog.returnValue = '';
     dialog.showModal();
@@ -387,13 +401,13 @@ function wireEntry(data){
       description:current.description.trim() ? '' : 'Informe uma descrição.',
       category:categories[current.type].includes(current.category) ? '' : 'Selecione uma categoria.',
       date:current.date && field('date').validity.valid ? '' : 'Informe uma data válida.',
-      paymentMethod:paymentMethods.includes(current.paymentMethod) ? '' : 'Selecione um meio de pagamento.',
+      paymentMethod:!field('paymentMethod').required || paymentMethods.includes(current.paymentMethod) ? '' : 'Selecione um meio de pagamento.',
       destinationPaymentMethod:!transfer ? '' : !paymentMethods.includes(current.destinationPaymentMethod)
         ? 'Selecione o destino.' : current.destinationPaymentMethod === current.paymentMethod ? 'Escolha um destino diferente da origem.' : '',
       installments:current.split && cents < current.installments ? 'Informe pelo menos R$ 0,01 por parcela.'
         : current.split && field('date').validity.valid && current.date && entryDateOffset(current.date,current.installments-1).startsWith('+')
           ? 'As parcelas ultrapassam o ano 9999.' : '',
-      receipt:receiptInvalid ? 'Selecione um PDF, PNG ou JPG válido de até 5 MiB.' : ''
+      receipt:receiptInvalid ? 'Selecione um PDF, PNG ou JPG válido de até 3 MiB.' : ''
     };
     status.textContent = '';
     Object.entries(errors).forEach(([name,value])=>error(name,value));
@@ -405,9 +419,10 @@ function wireEntry(data){
     }
     const record = {
       type:current.type,category:current.category,amount:cents,date:current.date,description:current.description.trim(),
-      paymentMethod:current.paymentMethod,status:current.status,
+      ...(current.paymentMethod ? {paymentMethod:current.paymentMethod} : {}),
+      ...(current.status ? {status:current.status} : {}),
       ...(transfer ? {destinationPaymentMethod:current.destinationPaymentMethod} : {}),
-      ...(current.notes.trim() ? {notes:current.notes.trim()} : {}),
+      ...(item || current.notes.trim() ? {notes:current.notes.trim()} : {}),
       ...(current.repeat ? {recurrence:current.recurrence} : {}),
       ...(current.split ? {installments:current.installments} : {})
     };
@@ -416,30 +431,43 @@ function wireEntry(data){
     element.querySelector('.entry-controls').disabled = true;
     const buttons = element.querySelectorAll('button[type="submit"]');
     buttons.forEach(button=>{button.disabled = true;});
-    const submit = event.submitter ?? buttons[1];
+    const submit = event.submitter ?? buttons[buttons.length-1];
     const submitLabel = submit.innerHTML;
     submit.textContent = 'Salvando…';
     let refreshed = true;
     try{
       if(accountUser){
-        if(receipt) record.receipt = await receiptPayload(receipt);
+        if(receipt instanceof File) record.receipt = await receiptPayload(receipt);
+        else if(item?.receipt && !receipt) record.receipt = null;
         if(epoch !== accountEpoch) return;
-        const payload = await apiRequest('/api/transactions',record);
-        if(epoch !== accountEpoch) return;
-        draft = null;
-        try{
-          const list = await apiRequest('/api/transactions');
+        if(item){
+          const {item:updated} = await apiRequest('/api/transactions/' + item.id,record,'PATCH');
           if(epoch !== accountEpoch) return;
-          entries = list.items.map(requireTransaction).filter(item=>!deletingTransactionIds.has(item.id));
-        }catch(error){
+          const saved = requireTransaction(updated);
+          if(saved.id !== item.id) throw Error('Resposta de edição inválida');
+          entries = entries.map(entry => entry.id === item.id ? saved : entry);
+        }else{
+          const payload = await apiRequest('/api/transactions',record);
           if(epoch !== accountEpoch) return;
-          if(error.status === 401){expireAccount();return;}
-          refreshed = false;
+          draft = null;
           try{
-            const item = requireTransaction(payload.item);
-            if(!entries.some(entry=>entry.id === item.id)) entries.push(item);
-          }catch{}
+            const list = await apiRequest('/api/transactions');
+            if(epoch !== accountEpoch) return;
+            entries = list.items.map(requireTransaction).filter(item=>!deletingTransactionIds.has(item.id));
+          }catch(error){
+            if(epoch !== accountEpoch) return;
+            if(error.status === 401){expireAccount();return;}
+            refreshed = false;
+            try{
+              const item = requireTransaction(payload.item);
+              if(!entries.some(entry=>entry.id === item.id)) entries.push(item);
+            }catch{}
+          }
         }
+      }else if(item){
+        const {destinationPaymentMethod, ...existing} = item;
+        const updatedReceipt = receipt instanceof File ? {name:receipt.name,mimeType:receipt.type,size:receipt.size,file:receipt} : receipt;
+        entries = entries.map(entry => entry.id === item.id ? {...existing,...record,receipt:updatedReceipt} : entry);
       }else{
         if(scenario.value === 'empty'){entries = [];scenario.value = 'normal';}
         entries.push(...demoBatch(record,receipt));
@@ -448,6 +476,7 @@ function wireEntry(data){
       if(epoch !== accountEpoch) return;
       if(error.status === 401){expireAccount();return;}
       status.textContent = error.status === 413 ? 'O comprovante excede o tamanho permitido.'
+        : error.status === 404 && item ? 'Este lançamento não está mais disponível para edição.'
         : error.status === 400 ? 'Confira os dados e o formato do comprovante.'
         : 'Não foi possível confirmar o salvamento. Confira o Extrato antes de reenviar.';
       return;
@@ -460,11 +489,13 @@ function wireEntry(data){
       }
     }
     draft = null;
-    search.value = '';
-    query = '';
-    resetTransactionFilters(record.date.slice(0,7));
-    const notice = refreshed ? 'Lançamento salvo.' : 'Lançamento salvo. Atualize o Extrato para consultar todos os registros.';
-    if(location.hash !== '#novo'){message = notice;render(false);return;}
+    if(!item || item.date.slice(0,7) !== record.date.slice(0,7)){
+      search.value = '';
+      query = '';
+      resetTransactionFilters(record.date.slice(0,7));
+    }
+    const notice = item ? 'Lançamento atualizado.' : refreshed ? 'Lançamento salvo.' : 'Lançamento salvo. Atualize o Extrato para consultar todos os registros.';
+    if(location.hash !== (item ? '#editar/'+item.id : '#novo')){message = notice;render(false);return;}
     if(keepEditing){
       mountEntry();
       main.querySelector('#entry-amount').focus({preventScroll:true});

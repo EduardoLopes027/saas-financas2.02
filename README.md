@@ -1,6 +1,6 @@
 # FinFlow
 
-Protótipo de um SaaS de finanças pessoais, com interface estática e API local de autenticação e lançamentos.
+Aplicação de finanças pessoais com interface estática e API de autenticação e lançamentos.
 
 Use Node.js 24. Para executar a aplicação com a API e o SQLite local:
 
@@ -8,9 +8,11 @@ Use Node.js 24. Para executar a aplicação com a API e o SQLite local:
 npm start
 ```
 
-Abra http://127.0.0.1:4174. Não é necessário instalar dependências para executar a aplicação ou os testes.
+Abra http://127.0.0.1:4174. Sem `DATABASE_URL`, a API local usa SQLite. Com `DATABASE_URL`, instale as dependências com `npm ci` para usar PostgreSQL.
 
-Para visualizar somente o front-end, execute `npm run preview` e abra http://localhost:4173. Também é possível abrir `public/index.html` diretamente no navegador para usar o protótipo estático.
+Para visualizar a demonstração, execute `npm run preview` e abra http://localhost:4173.
+
+Para publicar com autenticação e dados persistentes, siga o [guia de implantação no Vercel com Supabase](docs/SUPABASE-VERCEL.md).
 
 ## Organização
 

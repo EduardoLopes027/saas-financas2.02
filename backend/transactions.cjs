@@ -99,6 +99,44 @@ function localDate() {
     .map((part, index) => String(part).padStart(index === 0 ? 4 : 2, '0')).join('-');
 }
 
+function* transactionRows(fields) {
+  if (!(fields.installments > 1)) {
+    yield fields;
+    return;
+  }
+  const total = BigInt(fields.amount);
+  const count = BigInt(fields.installments);
+  const base = Number(total / count);
+  const remainder = Number(total % count);
+  for (let index = 0; index < fields.installments; index++) {
+    yield {
+      ...fields,
+      amount: base + Number(index < remainder),
+      date: occurrenceDate(fields.date, 'Mensal', index),
+      installmentNumber: index + 1,
+    };
+  }
+}
+
+const editable = [
+  'type', 'category', 'amount', 'date', 'description', 'paymentMethod', 'status',
+  'destinationPaymentMethod', 'notes', 'receipt',
+];
+
+function updateFields(current, body, maxAmount) {
+  if (!body || typeof body !== 'object' || Array.isArray(body)
+      || !Object.keys(body).length || Object.keys(body).some(key => !editable.includes(key))) return null;
+  const merged = Object.fromEntries(editable.filter(key => key !== 'receipt').map(key => [key, current[key]]));
+  Object.assign(merged, body);
+  if (!Object.hasOwn(body, 'destinationPaymentMethod') && merged.type !== current.type) {
+    merged.destinationPaymentMethod = undefined;
+  }
+  const fields = transactionFields(merged);
+  if (!fields || fields.amount > maxAmount) return null;
+  if (body.receipt === null) fields.receipt = null;
+  return fields;
+}
+
 function transactionStore(db) {
   function atomic(action) {
     db.exec('BEGIN IMMEDIATE');
@@ -162,14 +200,20 @@ function transactionStore(db) {
       CREATE INDEX IF NOT EXISTS transaction_recurrences_due ON transaction_recurrences(user_id, next_date);
     `);
   });
-  const list = db.prepare(`
+  const selectItems = `
     SELECT t.id, type, category, amount, date, description, payment_method AS paymentMethod, status,
       destination_payment_method AS destinationPaymentMethod, notes, recurrence,
       installments, installment_number AS installmentNumber,
       r.name AS receiptName, r.mime_type AS receiptMimeType, length(r.bytes) AS receiptSize
     FROM transactions t LEFT JOIN transaction_receipts r ON r.transaction_id = t.id
-    WHERE t.user_id = ? ORDER BY date DESC, t.id DESC
+    `;
+  const list = db.prepare(selectItems + ' WHERE t.user_id = ? ORDER BY date DESC, t.id DESC');
+  const find = db.prepare(selectItems + ' WHERE t.user_id = ? AND t.id = ?');
+  const update = db.prepare(`
+    UPDATE transactions SET type=?, category=?, amount=?, date=?, description=?,
+      payment_method=?, status=?, destination_payment_method=?, notes=? WHERE user_id=? AND id=?
   `);
+  const deleteReceipt = db.prepare('DELETE FROM transaction_receipts WHERE transaction_id = ?');
   const insert = db.prepare(`
     INSERT INTO transactions (user_id, type, category, amount, date, description, payment_method, status,
       destination_payment_method, notes, recurrence, installments, installment_number)
@@ -200,7 +244,30 @@ function transactionStore(db) {
     return { id, ...fields };
   }
 
+  function itemFromRow({ receiptName, receiptMimeType, receiptSize, ...row }) {
+    const item = Object.fromEntries(Object.entries(row).filter(([, value]) => value !== null));
+    if (receiptName !== null) item.receipt = { name: receiptName, mimeType: receiptMimeType, size: receiptSize };
+    return item;
+  }
+
   return {
+    update(userId, id, body, maxAmount) {
+      return atomic(() => {
+        const row = find.get(userId, id);
+        if (!row) return undefined;
+        const fields = updateFields(itemFromRow(row), body, maxAmount);
+        if (!fields) return null;
+        const { type, category, amount, date, description, paymentMethod = null, status = null,
+          destinationPaymentMethod = null, notes = null, receipt } = fields;
+        update.run(type, category, amount, date, description, paymentMethod, status,
+          destinationPaymentMethod, notes, userId, id);
+        if (receipt !== undefined) {
+          deleteReceipt.run(id);
+          if (receipt) saveReceipt.run(id, receipt.name, receipt.mimeType, receipt.bytes);
+        }
+        return itemFromRow(find.get(userId, id));
+      });
+    },
     remove(userId, id) {
       return remove.run(id, userId).changes > 0;
     },
@@ -220,31 +287,14 @@ function transactionStore(db) {
           advanceRule.run(index, date, rule.id);
         }
       });
-      return list.all(userId).map(({ receiptName, receiptMimeType, receiptSize, ...row }) => {
-        const item = Object.fromEntries(Object.entries(row).filter(([, value]) => value !== null));
-        if (receiptName !== null) item.receipt = { name: receiptName, mimeType: receiptMimeType, size: receiptSize };
-        return item;
-      });
+      return list.all(userId).map(itemFromRow);
     },
     create(userId, { receipt, ...fields }) {
       return atomic(() => {
         let item;
-        if (fields.installments > 1) {
-          const total = BigInt(fields.amount);
-          const count = BigInt(fields.installments);
-          const base = total / count;
-          const remainder = Number(total % count);
-          for (let index = 0; index < fields.installments; index++) {
-            const installment = insertItem(userId, {
-              ...fields,
-              amount: Number(base) + Number(index < remainder),
-              date: occurrenceDate(fields.date, 'Mensal', index),
-              installmentNumber: index + 1,
-            });
-            item ??= installment;
-          }
-        } else {
-          item = insertItem(userId, fields);
+        for (const row of transactionRows(fields)) {
+          const inserted = insertItem(userId, row);
+          item ??= inserted;
         }
         if (fields.recurrence) {
           saveRule.run(userId, JSON.stringify(fields), occurrenceDate(fields.date, fields.recurrence, 1));
@@ -260,4 +310,4 @@ function transactionStore(db) {
   };
 }
 
-module.exports = { transactionFields, transactionStore, MAX_TRANSACTION_BODY };
+module.exports = { transactionFields, transactionStore, MAX_TRANSACTION_BODY, occurrenceDate, localDate, transactionRows, updateFields };

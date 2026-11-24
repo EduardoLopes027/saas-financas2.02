@@ -6,9 +6,12 @@
     "start": "node backend/auth.cjs",
     "preview": "node scripts/serve.cjs",
     "build:css": "npx --yes tailwindcss@3.4.17 -c config/tailwind.cjs -i src/styles/stitch-home.input.css -o public/assets/css/stitch-home.css --minify",
-    "test": "node --test backend/auth.test.cjs backend/transactions.test.cjs"
+    "test": "node --test backend/auth.test.cjs backend/transactions.test.cjs backend/postgres.test.cjs"
   },
   "engines": {
     "node": ">=24"
+  },
+  "dependencies": {
+    "postgres": "^4.1.1"
   }
 }

@@ -33,7 +33,10 @@ let balanceHidden = false;
 const search = document.querySelector('#search-query');
 let query = '';
 const searchKey = value => value.normalize('NFD').replace(/\p{M}/gu,'').toLocaleLowerCase('pt-BR').trim();
-let appMode = location.hostname === '127.0.0.1' ? 'checking' : 'demo';
+const localPreview = ['localhost','127.0.0.1','[::1]'].includes(location.hostname) && location.port === '4173';
+const editIdFromRoute = () => Number(/^#editar\/(\d+)$/.exec(location.hash)?.[1]) || null;
+const entryRoute = () => location.hash === '#novo' || editIdFromRoute() !== null;
+let appMode = localPreview ? 'demo' : 'checking';
 let entries = appMode === 'demo' ? initial.map((item,index) => ({...item,id:index+1})) : [];
 let accountUser = null;
 let accountEpoch = 0;
@@ -307,7 +310,9 @@ function transactionRow(item){
     + '<td role="cell"><span class="transactions-status" data-status="' + (status ? status.toLowerCase() : 'unknown') + '">'
     + (status ? '<span aria-hidden="true">' + (status === 'Pago' ? '✓' : '◷') + '</span> ' : '') + (status || 'Não informado') + '</span></td>'
     + '<td role="cell" class="transactions-amount" data-tone="' + tone + '">' + signedMoney(item.amount, transfer ? '' : income ? '+' : '−') + '</td>'
-    + '<td role="cell" class="transactions-action"><div class="transactions-row-actions">' + receiptLink(item) + '<button type="button" class="transactions-delete" data-delete-id="' + item.id + '" aria-label="Excluir lançamento ' + escape(item.description) + ' de ' + date + '" title="Excluir lançamento"' + (deletingTransactionIds.has(item.id) ? ' disabled' : '') + '><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3m3 0-1 13H7L6 7m4 4v6m4-6v6"/></svg></button></div></td>'
+    + '<td role="cell" class="transactions-action"><div class="transactions-row-actions">' + receiptLink(item)
+    + '<a class="transactions-edit" href="#editar/' + item.id + '" aria-label="Editar lançamento ' + escape(item.description) + ' de ' + date + '" title="Editar lançamento">' + entryIcon('edit') + '</a>'
+    + '<button type="button" class="transactions-delete" data-delete-id="' + item.id + '" aria-label="Excluir lançamento ' + escape(item.description) + ' de ' + date + '" title="Excluir lançamento"' + (deletingTransactionIds.has(item.id) ? ' disabled' : '') + '><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3m3 0-1 13H7L6 7m4 4v6m4-6v6"/></svg></button></div></td>'
     + '</tr>';
 }
 
@@ -610,7 +615,7 @@ async function apiRequest(path, body, method){
   const request = {cache:'no-store',credentials:'same-origin',signal:AbortSignal.timeout(12000)};
   if(method) request.method=method;
   if(body !== undefined){
-    request.method='POST';
+    request.method=method ?? 'POST';
     request.headers={'Content-Type':'application/json'};
     request.body=JSON.stringify(body);
   }
@@ -648,7 +653,7 @@ function forgetAccount(){
 }
 
 function suspendEntryDraft(user, entryDraft){
-  if(user && entryDraft && location.hash==='#novo'){
+  if(user && entryDraft && entryRoute()){
     suspendedDraft={ownerId:user.id,entryDraft};
   }
 }
@@ -685,7 +690,6 @@ async function loadAccountTransactions(){
 }
 
 async function restoreAccount(){
-  const initialProbe=appMode==='checking';
   const previousUser=accountUser;
   const previousDraft=draft;
   const previousView={month:homeMonth,filters:{...filters},query,search:search.value,balanceHidden,listPage,listPageSize};
@@ -713,16 +717,9 @@ async function restoreAccount(){
     }
   }catch(error){
     if(epoch!==accountEpoch) return;
-    if(initialProbe && error.status===404){
-      appMode='demo';
-      entries=initial.map((item,index)=>({...item,id:index+1}));
-      homeMonth=demoMonth;
-      filters.month=demoMonth;
-    }else{
-      appMode='account';
-      sessionProblem=error.status!==401;
-      if(!sessionProblem && previousUser) authNotice='Sua sessão expirou. Entre novamente para continuar.';
-    }
+    appMode='account';
+    sessionProblem=error.status!==401;
+    if(!sessionProblem && previousUser) authNotice='Sua sessão expirou. Entre novamente para continuar.';
   }finally{
     if(epoch===accountEpoch) authBusy=false;
   }
@@ -766,7 +763,7 @@ function renderAccountGate(focus,authPreview){
   if(pending||problem){
     const title=pending?'Verificando sessão…':logoutProblem?'Não foi possível encerrar a sessão':'Não foi possível verificar a sessão';
     main.innerHTML='<section class="card form account-card"><h1 tabindex="-1">'+title+'</h1>'
-      +(pending?'<p role="status">Aguarde um momento.</p>':'<p role="alert">Verifique a conexão com a API local.</p><button id="account-retry">Tentar novamente</button>')+'</section>';
+      +(pending?'<p role="status">Aguarde um momento.</p>':'<p role="alert">O serviço está indisponível no momento. Tente novamente.</p><button id="account-retry">Tentar novamente</button>')+'</section>';
     main.querySelector('#account-retry')?.addEventListener('click',logoutProblem?logout:restoreAccount);
   }else{
     main.replaceChildren(document.querySelector('#stitch-auth').content.cloneNode(true));
@@ -834,7 +831,7 @@ async function submitAccount(event, register){
     authBusy=false;
     accountChannel?.postMessage('account-changed');
     draft=resumeEntryDraft(user);
-    const destination=draft ? '#novo' : '#painel';
+    const destination=draft?.editId ? '#editar/'+draft.editId : draft ? '#novo' : '#painel';
     if(location.hash!==destination) location.hash=destination;
     await loadAccountTransactions();
   }catch(error){
@@ -844,7 +841,7 @@ async function submitAccount(event, register){
       :error.status===401?'E-mail ou senha inválidos.'
       :error.status===400?'Confira o e-mail e a senha.'
       :error.status===429?'Muitas tentativas. Aguarde antes de tentar novamente.'
-      :'Não foi possível acessar a API local. Tente novamente.';
+      :'Não foi possível conectar ao serviço. Tente novamente.';
     status.textContent=authNotice;
     if(registered) location.hash='login';
     else if(!form.isConnected) render(true);
@@ -862,7 +859,7 @@ function render(focus){
   updateAccountChrome(authPreview);
   const listRoute=location.hash==='#lancamentos' && !authPreview && (appMode==='demo'||accountUser);
   document.body.classList.toggle('transactions-view',!!listRoute);
-  document.body.classList.toggle('entry-view',location.hash==='#novo' && (appMode==='demo' || accountUser && accountState==='ready'));
+  document.body.classList.toggle('entry-view',entryRoute() && (appMode==='demo' || accountUser && accountState==='ready'));
   if(authPreview||(appMode!=='demo'&&!accountUser)){
     document.body.classList.remove('home-view');
     renderAccountGate(focus,authPreview);
@@ -875,7 +872,7 @@ function render(focus){
     if(focus) main.querySelector('h1').focus();
     return;
   }
-  const view=['lancamentos','novo'].includes(location.hash.slice(1))?location.hash.slice(1):'painel';
+  const view=entryRoute() ? 'novo' : location.hash==='#lancamentos' ? 'lancamentos' : 'painel';
   document.body.classList.toggle('home-view', view === 'painel');
   document.querySelectorAll('nav a').forEach(a=>{
     if(a.hash==='#'+(view==='novo'?'lancamentos':view)) a.setAttribute('aria-current','page');else a.removeAttribute('aria-current');
@@ -887,7 +884,13 @@ function render(focus){
   if(view!=='novo'&&demoLoadError){
     main.insertAdjacentHTML('beforeend','<section class="card state-card"><p class="error" role="alert">Não foi possível carregar os dados.</p><button id="retry">Tentar novamente</button></section>');
     document.querySelector('#retry').onclick=()=>{scenario.value='normal';render(true);};
-  }else if(view==='novo') mountEntry();
+  }else if(view==='novo'){
+    const editId = editIdFromRoute();
+    const item = editId === null ? null : records().find(record=>record.id === editId);
+    if(editId !== null && !item){
+      main.innerHTML='<section class="card state-card"><h1 tabindex="-1">Lançamento indisponível</h1><p>Este lançamento não está disponível para edição.</p><a href="#lancamentos">Voltar para Lançamentos</a></section>';
+    }else mountEntry(item);
+  }
   else if(view==='lancamentos') mountTransactions();
   main.querySelector('#home-month')?.addEventListener('change',event=>{
     homeMonth=event.currentTarget.value;
@@ -953,7 +956,7 @@ document.addEventListener('click',event=>{
 document.querySelector('.skip').addEventListener('click',event=>{event.preventDefault();main.focus();});
 scenario.addEventListener('change',()=>{
   if(appMode!=='demo') return;
-  if(location.hash==='#novo' && saveBusy) return;
+  if(entryRoute() && saveBusy) return;
   render(false);
 });
 window.addEventListener('hashchange',()=>{

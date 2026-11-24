@@ -4,7 +4,6 @@ const { createHash, randomBytes, scrypt, timingSafeEqual } = require('node:crypt
 const { readFile, mkdir } = require('node:fs/promises');
 const { createServer } = require('node:http');
 const { dirname, join } = require('node:path');
-const { DatabaseSync } = require('node:sqlite');
 const { promisify } = require('node:util');
 const { transactionFields, transactionStore, MAX_TRANSACTION_BODY } = require('./transactions.cjs');
 
@@ -13,6 +12,9 @@ const COOKIE = 'finflow_session';
 const SESSION_SECONDS = 7 * 24 * 60 * 60;
 const WINDOW_MS = 15 * 60 * 1000;
 const MAX_ATTEMPTS = 12;
+const POSTGRES_MAX_AMOUNT = 999999999999;
+const HOSTED_MAX_RECEIPT = 3 * 1024 * 1024;
+const HOSTED_MAX_BODY = 4 * Math.ceil(HOSTED_MAX_RECEIPT / 3) + 32 * 1024;
 const ROOT = join(__dirname, '..', 'public');
 const DUMMY_SALT = randomBytes(16);
 const DUMMY_HASH = randomBytes(64);
@@ -86,10 +88,11 @@ async function readCredentials(request, isRegister) {
   return { email, password, name: name?.trim(), salaryDay, remember };
 }
 
-function cookieHeaders(token, maxAge) {
+function cookieHeaders(token, maxAge, secure) {
+  const security = '; HttpOnly; SameSite=Strict' + (secure ? '; Secure' : '');
   return [
-    COOKIE + '=' + token + '; Path=/api; HttpOnly; SameSite=Strict' + (maxAge === null ? '' : '; Max-Age=' + maxAge),
-    COOKIE + '=; Path=/api/auth; HttpOnly; SameSite=Strict; Max-Age=0',
+    COOKIE + '=' + token + '; Path=/api' + security + (maxAge === null ? '' : '; Max-Age=' + maxAge),
+    COOKIE + '=; Path=/api/auth' + security + '; Max-Age=0',
   ];
 }
 
@@ -106,7 +109,8 @@ function hashPassword(password, salt) {
   return deriveKey(password, salt, 64, { N: 32768, r: 8, p: 3, maxmem: 64 * 1024 * 1024 });
 }
 
-async function start({ databasePath = join(__dirname, '.local', 'auth.sqlite'), port = 4174 } = {}) {
+async function sqliteStore(databasePath) {
+  const { DatabaseSync } = require('node:sqlite');
   if (databasePath !== ':memory:') await mkdir(dirname(databasePath), { recursive: true });
   const db = new DatabaseSync(databasePath);
   db.exec(`
@@ -156,14 +160,47 @@ async function start({ databasePath = join(__dirname, '.local', 'auth.sqlite'), 
     ON CONFLICT(bucket) DO UPDATE SET attempts = attempts + 1
     WHERE attempts < ? RETURNING attempts
   `);
+  return {
+    close: () => db.close(),
+    getUser: email => getUser.get(email),
+    addUser(email, salt, hash, name, salaryDay) {
+      const result = addUser.run(email, salt, hash, name ?? null, salaryDay ?? null);
+      return result.changes ? result.lastInsertRowid : undefined;
+    },
+    getSession: (hash, now) => getSession.get(hash, now),
+    deleteSession: hash => deleteSession.run(hash),
+    rotateSession(hash, userId, expires, previous, now) {
+      db.exec('BEGIN IMMEDIATE');
+      try {
+        deleteExpired.run(now);
+        deleteSession.run(previous);
+        addSession.run(hash, userId, expires);
+        db.exec('COMMIT');
+      } catch (error) {
+        db.exec('ROLLBACK');
+        throw error;
+      }
+    },
+    recordAttempt(bucket) {
+      clearAttempts.run(bucket);
+      return Boolean(recordAttempt.get(bucket, MAX_ATTEMPTS));
+    },
+    transactions,
+  };
+}
+
+function createHandler(store, { secure = false, postgres = false, expectedOrigin } = {}) {
+  const { transactions } = store;
+  const maxAmount = postgres ? POSTGRES_MAX_AMOUNT : Number.MAX_SAFE_INTEGER;
+  const maxBody = secure ? HOSTED_MAX_BODY : MAX_TRANSACTION_BODY;
   let activeHashes = 0;
 
   function account(id, email, name, salaryDay) {
     return { id, email, ...(name && { name }), ...(salaryDay && { salaryDay }) };
   }
 
-  function requireSession(request) {
-    const user = getSession.get(sessionHash(request), Date.now());
+  async function requireSession(request) {
+    const user = await store.getSession(sessionHash(request), Date.now());
     if (!user) throw new HttpError(401, 'unauthenticated');
     return account(user.id, user.email, user.name, user.salaryDay);
   }
@@ -174,15 +211,21 @@ async function start({ databasePath = join(__dirname, '.local', 'auth.sqlite'), 
 
     const now = Date.now();
     const bucket = Math.floor(now / WINDOW_MS);
-    clearAttempts.run(bucket);
-    if (activeHashes >= 4 || !recordAttempt.get(bucket, MAX_ATTEMPTS)) {
+    const ip = secure ? request.headers['x-vercel-forwarded-for'] : request.socket.remoteAddress;
+    const scopes = [
+      ['email:' + tokenHash(email), MAX_ATTEMPTS],
+      ['network:' + tokenHash(typeof ip === 'string' ? ip : 'unknown'), 48],
+      ['global', 240],
+    ];
+    if (activeHashes >= 4 || !await store.recordAttempt(bucket, scopes) || activeHashes >= 4) {
       response.setHeader('Retry-After', Math.ceil(((bucket + 1) * WINDOW_MS - now) / 1000));
       throw new HttpError(429, 'too_many_attempts');
     }
 
-    const user = isRegister ? null : getUser.get(email);
+    const user = isRegister ? null : await store.getUser(email);
     const salt = isRegister ? randomBytes(16) : user?.password_salt ?? DUMMY_SALT;
     let hash;
+    if (activeHashes >= 4) throw new HttpError(429, 'too_many_attempts');
     activeHashes++;
     try {
       hash = await hashPassword(password, salt);
@@ -191,52 +234,63 @@ async function start({ databasePath = join(__dirname, '.local', 'auth.sqlite'), 
     }
 
     if (isRegister) {
-      const result = addUser.run(email, salt, hash, name ?? null, salaryDay ?? null);
-      if (!result.changes) throw new HttpError(409, 'email_unavailable');
-      return json(response, 201, { user: account(result.lastInsertRowid, email, name, salaryDay) });
+      const id = await store.addUser(email, salt, hash, name, salaryDay);
+      if (!id) throw new HttpError(409, 'email_unavailable');
+      return json(response, 201, { user: account(id, email, name, salaryDay) });
     }
 
     if (!timingSafeEqual(hash, user?.password_hash ?? DUMMY_HASH) || !user) {
       throw new HttpError(401, 'invalid_credentials');
     }
     const token = randomBytes(32).toString('base64url');
-    deleteExpired.run(now);
     const duration = remember === true ? 30 * 24 * 60 * 60 : SESSION_SECONDS;
-    addSession.run(tokenHash(token), user.id, now + duration * 1000);
-    deleteSession.run(sessionHash(request));
-    response.setHeader('Set-Cookie', cookieHeaders(token, remember === false ? null : duration));
+    await store.rotateSession(tokenHash(token), user.id, now + duration * 1000, sessionHash(request), now);
+    response.setHeader('Set-Cookie', cookieHeaders(token, remember === false ? null : duration, secure));
     return json(response, 200, { user: account(user.id, email, user.name, user.salary_day) });
   }
 
-  const server = createServer({ requestTimeout: 15000, headersTimeout: 10000 }, async (request, response) => {
+  return async (request, response) => {
     try {
-      const pathname = request.url.split('?')[0];
-      const expectedHost = '127.0.0.1:' + server.address().port;
-      if (request.headers.host !== expectedHost) throw new HttpError(403, 'host_not_allowed');
+      const [originalPath, search = ''] = request.url.split('?', 2);
+      const target = new URLSearchParams(search).get('__route');
+      const pathname = secure && originalPath === '/api/index' && target
+        ? '/api/' + target.replace(/^\/+/, '') : originalPath;
+      const origin = expectedOrigin ?? 'http://127.0.0.1:' + request.socket.localPort;
+      if (!secure && request.headers.host !== new URL(origin).host) throw new HttpError(403, 'host_not_allowed');
       const route = request.method + ' ' + pathname;
 
       const deleteTransaction = request.method === 'DELETE' && pathname.startsWith('/api/transactions/');
       const downloadReceipt = request.method === 'GET' && pathname.startsWith('/api/transactions/')
         && pathname.endsWith('/receipt');
-      const jsonPost = route.startsWith('POST /api/auth/') || route === 'POST /api/transactions';
+      const updateTransaction = request.method === 'PATCH' && pathname.startsWith('/api/transactions/');
+      const jsonPost = route.startsWith('POST /api/auth/') || route === 'POST /api/transactions' || updateTransaction;
       if (jsonPost || deleteTransaction) {
-        const origin = request.headers.origin;
-        if (origin !== undefined && origin !== 'http://' + expectedHost) {
+        if ((secure || request.headers.origin !== undefined) && request.headers.origin !== origin) {
           throw new HttpError(403, 'origin_not_allowed');
         }
         const type = request.headers['content-type']?.split(';')[0].trim().toLowerCase();
         if (jsonPost && type !== 'application/json') throw new HttpError(415, 'json_required');
       }
 
-      if (deleteTransaction || downloadReceipt) {
-        const user = requireSession(request);
+      if (deleteTransaction || downloadReceipt || updateTransaction) {
+        const user = await requireSession(request);
         const rawId = pathname.slice('/api/transactions/'.length, downloadReceipt ? -'/receipt'.length : undefined);
         const id = Number(rawId);
         if (!/^[1-9]\d*$/.test(rawId) || !Number.isSafeInteger(id)) {
           throw new HttpError(400, 'invalid_transaction');
         }
+        if (postgres && id > 2147483647) throw new HttpError(404, 'not_found');
+        if (updateTransaction) {
+          const body = await readJson(request, maxBody);
+          enforceReceiptLimit(body);
+          const { id: userId } = await requireSession(request);
+          const item = await transactions.update(userId, id, body, maxAmount);
+          if (item === undefined) throw new HttpError(404, 'not_found');
+          if (item === null) throw new HttpError(400, 'invalid_transaction');
+          return json(response, 200, { item });
+        }
         if (downloadReceipt) {
-          const receipt = transactions.receipt(user.id, id);
+          const receipt = await transactions.receipt(user.id, id);
           if (!receipt) throw new HttpError(404, 'not_found');
           const filename = encodeURIComponent(receipt.name)
             .replace(/['()*]/g, character => '%' + character.charCodeAt(0).toString(16));
@@ -248,7 +302,7 @@ async function start({ databasePath = join(__dirname, '.local', 'auth.sqlite'), 
             'X-Content-Type-Options': 'nosniff',
           }).end(receipt.bytes);
         }
-        if (!transactions.remove(user.id, id)) throw new HttpError(404, 'not_found');
+        if (!await transactions.remove(user.id, id)) throw new HttpError(404, 'not_found');
         return response.writeHead(204, { 'Cache-Control': 'no-store' }).end();
       }
 
@@ -258,26 +312,28 @@ async function start({ databasePath = join(__dirname, '.local', 'auth.sqlite'), 
         case 'POST /api/auth/login':
           return await authenticate(request, response, false);
         case 'GET /api/auth/session':
-          return json(response, 200, { user: requireSession(request) });
+          return json(response, 200, { user: await requireSession(request) });
         case 'POST /api/auth/logout':
-          deleteSession.run(sessionHash(request));
+          await store.deleteSession(sessionHash(request));
           return response.writeHead(204, {
-            'Set-Cookie': cookieHeaders('', 0), 'Cache-Control': 'no-store',
+            'Set-Cookie': cookieHeaders('', 0, secure), 'Cache-Control': 'no-store',
           }).end();
         case 'GET /api/transactions': {
-          const { id } = requireSession(request);
-          return json(response, 200, { items: transactions.list(id) });
+          const { id } = await requireSession(request);
+          return json(response, 200, { items: await transactions.list(id) });
         }
         case 'POST /api/transactions': {
-          requireSession(request);
-          const fields = transactionFields(await readJson(request, MAX_TRANSACTION_BODY));
-          const { id } = requireSession(request);
-          if (!fields) throw new HttpError(400, 'invalid_transaction');
-          return json(response, 201, { item: transactions.create(id, fields) });
+          await requireSession(request);
+          const body = await readJson(request, maxBody);
+          enforceReceiptLimit(body);
+          const fields = transactionFields(body);
+          const { id } = await requireSession(request);
+          if (!fields || fields.amount > maxAmount) throw new HttpError(400, 'invalid_transaction');
+          return json(response, 201, { item: await transactions.create(id, fields) });
         }
       }
 
-      const asset = request.method === 'GET' && assets.get(pathname);
+      const asset = !secure && request.method === 'GET' && assets.get(pathname);
       if (!asset) throw new HttpError(404, 'not_found');
       const content = await readFile(join(ROOT, asset[0]));
       return response.writeHead(200, {
@@ -285,25 +341,52 @@ async function start({ databasePath = join(__dirname, '.local', 'auth.sqlite'), 
       }).end(content);
     } catch (error) {
       if (error instanceof HttpError) {
-        if (error.status === 413) response.setHeader('Connection', 'close');
+        if (!secure && error.status === 413) response.setHeader('Connection', 'close');
         return json(response, error.status, { error: error.message });
       }
       if (error.code === 'ENOENT') return json(response, 404, { error: 'not_found' });
       console.error('Falha no servidor de autenticação:', error.code ?? error.name);
       return json(response, 500, { error: 'internal_error' });
     }
-  });
+  };
 
-  server.on('close', () => db.close());
+  function enforceReceiptLimit(body) {
+    const base64 = body?.receipt?.dataBase64;
+    if (secure && typeof base64 === 'string' && Buffer.byteLength(base64, 'base64') > HOSTED_MAX_RECEIPT) {
+      throw new HttpError(413, 'body_too_large');
+    }
+  }
+}
+
+async function start({
+  databasePath = join(__dirname, '.local', 'auth.sqlite'), port = 4174,
+  databaseUrl = process.env.DATABASE_URL,
+} = {}) {
+  if (process.env.VERCEL) throw new Error('Use the Vercel API handler');
+  const usePostgres = databaseUrl !== undefined;
+  const store = usePostgres
+    ? require('./postgres.cjs').postgresStore(databaseUrl, process.env.DATABASE_CA_CERT)
+    : await sqliteStore(databasePath);
+  try {
+    await store.check?.();
+  } catch (error) {
+    await store.close();
+    throw error;
+  }
+  const server = createServer({ requestTimeout: 15000, headersTimeout: 10000 },
+    createHandler(store, { postgres: usePostgres }));
   try {
     await new Promise((resolve, reject) => {
       server.once('error', reject);
       server.listen(port, '127.0.0.1', resolve);
     });
   } catch (error) {
-    db.close();
+    await store.close();
     throw error;
   }
+  server.on('close', () => {
+    Promise.resolve(store.close()).catch(error => console.error('Database close failed:', error.code ?? error.name));
+  });
   return { server, url: 'http://127.0.0.1:' + server.address().port };
 }
 
@@ -314,9 +397,9 @@ if (require.main === module) {
   })
     .then(({ url }) => console.log('FinFlow local: ' + url))
     .catch(error => {
-      console.error(error.message);
+      console.error(error.code ?? error.name);
       process.exitCode = 1;
     });
 }
 
-module.exports = { start };
+module.exports = { start, createHandler, json };

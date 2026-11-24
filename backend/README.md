@@ -76,8 +76,14 @@ $env:FINFLOW_AUTH_PORT = "0"
 npm.cmd start
 ```
 
-## Antes de produção na Vercel
+## Edição e PostgreSQL
 
-Migre o SQLite local para um banco persistente compartilhado entre instâncias, mantendo unicidade de e-mail e revogação de sessão no banco. Substitua o limite global de desenvolvimento por limites distribuídos por origem e identidade, considerando os proxies confiáveis. Adapte as rotas ao runtime da Vercel e configure HTTPS, cookie Secure e a origem de produção. Defina verificação de e-mail e recuperação de conta antes de aceitar usuários reais.
+`PATCH /api/transactions/:id` aceita um JSON parcial e devolve `200 { "item": ... }`. A edição afeta somente a linha indicada. Parcelas e ocorrências futuras conservam os parâmetros da criação. O campo `receipt` substitui o arquivo quando recebe um objeto, remove quando recebe `null` e preserva quando omitido.
+
+O servidor local seleciona PostgreSQL quando `DATABASE_URL` está definida. A função da Vercel exige PostgreSQL e `APP_ORIGIN` com a origem HTTPS exata, sem barra final. O pooler de transações usa TLS com verificação do servidor. Informe `DATABASE_CA_CERT` quando o provedor exigir uma CA específica.
+
+No PostgreSQL, o maior valor por lançamento é `999999999999` centavos, correspondente a `NUMERIC(12,2)`. Na Vercel, o comprovante pode ter até 3 MiB decodificados, com espaço para o base64 e os outros campos no limite de requisição da plataforma. O servidor local mantém o limite de 5 MiB. O schema deve ser aplicado antes da inicialização e as credenciais ficam no servidor. Consulte o [guia de implantação](../docs/SUPABASE-VERCEL.md).
+
+`npm test` executa os testes locais. Para incluir o teste PostgreSQL descartável, instale `@electric-sql/pglite` e `@electric-sql/pglite-socket` em um diretório temporário e aponte `FINFLOW_PGLITE_DIR` para esse diretório antes do comando. O teste utiliza um PostgreSQL em memória com conexão TCP local. O banco local SQLite existente permanece onde está.
 
 As senhas usam scrypt com salt aleatório por conta. O banco guarda o hash do identificador de sessão e a validade. O servidor HTTP local se limita ao loopback e só aceita o host configurado. Requisições POST de navegador ficam restritas à mesma origem.

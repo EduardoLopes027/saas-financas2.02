@@ -125,6 +125,16 @@ test('lançamentos persistem e ficam isolados entre duas contas', async t => {
   assert.equal(file.headers.get('content-type'), receipt.mimeType);
   assert.match(file.headers.get('content-disposition'), /^attachment;/);
   assert.deepEqual(Buffer.from(await file.arrayBuffer()), pdf);
+  const patch = cookie => fetch(app.url + path + '/' + fourth.id, {
+    method: 'PATCH',
+    headers: { Cookie: cookie, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ notes: 'Revisado', receipt: null }),
+  });
+  assert.equal((await patch(b.cookie)).status, 404);
+  const edited = await patch(a.cookie);
+  assert.equal(edited.status, 200);
+  assert.deepEqual((await edited.json()).item, Object.fromEntries(Object.entries({ ...fourth, notes: 'Revisado' }).filter(([key]) => key !== 'receipt')));
+  assert.equal((await api(download, { cookie: a.cookie })).status, 404);
   const deleted = await fetch(app.url + path + '/' + fourth.id, {
     method: 'DELETE', headers: { Cookie: a.cookie },
   });

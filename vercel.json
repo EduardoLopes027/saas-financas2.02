@@ -1,5 +1,19 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": null,
-  "outputDirectory": "public"
+  "outputDirectory": "public",
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        { "key": "Strict-Transport-Security", "value": "max-age=31536000" }
+      ]
+    }
+  ],
+  "rewrites": [
+    { "source": "/api/auth/:action", "destination": "/api/index?__route=auth/:action" },
+    { "source": "/api/transactions", "destination": "/api/index?__route=transactions" },
+    { "source": "/api/transactions/:id", "destination": "/api/index?__route=transactions/:id" },
+    { "source": "/api/transactions/:id/receipt", "destination": "/api/index?__route=transactions/:id/receipt" }
+  ]
 }
