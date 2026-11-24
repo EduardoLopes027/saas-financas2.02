@@ -365,7 +365,7 @@ async function start({
   if (process.env.VERCEL) throw new Error('Use the Vercel API handler');
   const usePostgres = databaseUrl !== undefined;
   const store = usePostgres
-    ? require('./postgres.cjs').postgresStore(databaseUrl, process.env.DATABASE_CA_CERT)
+    ? await require('./postgres.cjs').postgresStore(databaseUrl, process.env.DATABASE_CA_CERT)
     : await sqliteStore(databasePath);
   try {
     await store.check?.();

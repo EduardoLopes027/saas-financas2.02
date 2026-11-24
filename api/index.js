@@ -11,6 +11,9 @@ const reasons = new Map(Object.entries({
   DATABASE_SSLMODE_INVALID: 'Use sslmode=require, verify-ca, or verify-full, or omit sslmode',
   DATABASE_CA_CERT_INVALID: 'DATABASE_CA_CERT is not a valid PEM certificate or chain',
   MODULE_NOT_FOUND: 'A backend dependency could not be loaded',
+  ERR_MODULE_NOT_FOUND: 'A backend dependency could not be loaded',
+  ERR_REQUIRE_ESM: 'The runtime could not load an ES module through require',
+  ERR_REQUIRE_ASYNC_MODULE: 'The runtime could not synchronously load an asynchronous ES module',
   CONNECT_TIMEOUT: 'Timed out connecting to PostgreSQL',
   CONNECTION_CLOSED: 'The PostgreSQL connection closed',
   CONNECTION_ENDED: 'The PostgreSQL connection ended',
@@ -37,14 +40,16 @@ const reasons = new Map(Object.entries({
   '57P03': 'PostgreSQL is not accepting connections',
 }));
 
-function reportInitializationError(error) {
+function reportInitializationError(stage, error) {
   const reported = error?.code;
+  const kind = ['TypeError', 'ReferenceError', 'SyntaxError', 'RangeError'].includes(error?.name)
+    ? error.name : 'UNKNOWN';
   const code = typeof reported === 'string' && (reasons.has(reported)
-    || /^(?:[0-9A-Z]{5}|ERR_(?:TLS|SSL)_[A-Z0-9_]+)$/.test(reported)) ? reported : 'UNKNOWN';
+    || /^(?:[0-9A-Z]{5}|ERR_[A-Z0-9_]{1,64})$/.test(reported)) ? reported : kind;
   const poolerReason = /tenant or user not found/i.test(error?.message ?? '')
     ? 'Supabase pooler could not find the project or login role' : undefined;
   // The driver error message and stack can contain connection details.
-  console.error('[finflow/api] Initialization failed [' + code + ']: '
+  console.error('[finflow/api] Initialization failed [' + code + '] at ' + stage + ': '
     + (reasons.get(code) ?? poolerReason ?? 'PostgreSQL or API initialization failed'));
 }
 
@@ -61,14 +66,17 @@ function configuredOrigin(value) {
 
 async function initialize() {
   let store;
+  let stage = 'PostgreSQL configuration and driver loading';
   try {
     const { postgresStore } = require('../backend/postgres.cjs');
-    store = postgresStore(process.env.DATABASE_URL, process.env.DATABASE_CA_CERT);
+    store = await postgresStore(process.env.DATABASE_URL, process.env.DATABASE_CA_CERT);
+    stage = 'APP_ORIGIN validation';
     const origin = configuredOrigin(process.env.APP_ORIGIN);
+    stage = 'PostgreSQL connection and schema check';
     await store.check();
     return createHandler(store, { secure: true, postgres: true, expectedOrigin: origin });
   } catch (error) {
-    reportInitializationError(error);
+    reportInitializationError(stage, error);
     await store?.close().catch(() => {});
     return null;
   }

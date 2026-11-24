@@ -1,7 +1,6 @@
 'use strict';
 
 const { X509Certificate } = require('node:crypto');
-const { default: postgres } = require('postgres');
 const { occurrenceDate, localDate, transactionRows, updateFields } = require('./transactions.cjs');
 
 const schema = 'finflow_private';
@@ -127,8 +126,10 @@ function connectionOptions(databaseUrl, ca) {
   };
 }
 
-function postgresStore(databaseUrl, ca) {
-  return createStore(postgres(connectionOptions(databaseUrl, ca)));
+async function postgresStore(databaseUrl, ca) {
+  const options = connectionOptions(databaseUrl, ca);
+  const { default: postgres } = await import('postgres');
+  return createStore(postgres(options));
 }
 
 function createStore(sql) {
