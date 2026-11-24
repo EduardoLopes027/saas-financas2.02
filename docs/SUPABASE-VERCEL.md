@@ -27,11 +27,14 @@ APP_ORIGIN=https://<DOMÍNIO_CANÔNICO_DO_FINFLOW>
 
 Salve `DATABASE_URL` como variável sensível. Cole o PEM em uma variável multilinha, sem aspas. Preencha `APP_ORIGIN` com a origem HTTPS que os usuários abrirão, sem barra final ou caminho. Para Preview com API, configure as mesmas variáveis nesse ambiente com banco separado e a origem HTTPS correspondente.
 
+A API também aceita o certificado em uma única linha ou com quebras escapadas. Se a URL incluir `sslmode`, use `verify-full`, `verify-ca` ou `require`. A verificação da CA e do hostname fica ativa em todos esses casos.
+
 O deploy serve `public/` e encaminha as rotas `/api/*` para a função Node.js. A autenticação usa senhas com hash scrypt e sessões revogáveis em cookie seguro. A função usa o PostgreSQL configurado em `DATABASE_URL`.
 
 ## Conferência
 
 - Abra o domínio canônico e confira se a tela de login carrega. Uma chamada a `GET /api/auth/session` sem sessão deve retornar `401`.
+- Se a chamada retornar `503`, procure `[finflow/api] Initialization failed` nos Runtime Logs. `28P01` indica senha recusada, `42P01` indica tabela ausente e `42501` indica que é preciso conferir os privilégios de `finflow_app`, incluindo a concessão de `finflow_runtime`.
 - Cadastre duas contas de teste. Em uma delas, crie uma receita no mês anterior e uma despesa no mês corrente. Confira o saldo acumulado na Home e os totais do mês em Lançamentos.
 - Edite e exclua a despesa. Recarregue e confira a persistência e os saldos. Entre na outra conta e confirme que os dados da primeira estão isolados.
 - Confira o encerramento de sessão e o acesso à conta após novo login.

@@ -1,5 +1,6 @@
 'use strict';
 
+const { X509Certificate } = require('node:crypto');
 const { default: postgres } = require('postgres');
 const { occurrenceDate, localDate, transactionRows, updateFields } = require('./transactions.cjs');
 
@@ -66,28 +67,75 @@ async function saveReceipt(query, userId, item, receipt) {
   item.receipt = { name, mimeType, size: bytes.length };
 }
 
-function postgresStore(databaseUrl, ca) {
-  const url = new URL(databaseUrl);
-  if (!['postgres:', 'postgresql:'].includes(url.protocol) || !url.hostname || !url.username) {
-    throw new Error('Invalid DATABASE_URL');
+function configurationError(code) {
+  return Object.assign(new Error(code), { code });
+}
+
+function normalizeCa(value) {
+  const pem = value?.trim().replace(/^"([\s\S]*)"$/, '$1').replace(/\\r\\n|\\[rn]/g, '\n').trim();
+  if (!pem) return undefined;
+  const pattern = /-----BEGIN CERTIFICATE-----([\s\S]*?)-----END CERTIFICATE-----/g;
+  const certificates = [];
+  try {
+    for (const [, body] of pem.matchAll(pattern)) {
+      const base64 = body.replace(/\s/g, '');
+      if (!/^[A-Za-z0-9+/]+={0,2}$/.test(base64)) throw new Error();
+      const certificate = '-----BEGIN CERTIFICATE-----\n' + base64.match(/.{1,64}/g).join('\n')
+        + '\n-----END CERTIFICATE-----\n';
+      certificates.push(new X509Certificate(certificate).toString());
+    }
+    if (!certificates.length || pem.replace(pattern, '').trim()) throw new Error();
+  } catch {
+    throw configurationError('DATABASE_CA_CERT_INVALID');
   }
-  // Keep connection-string options from overriding the explicit TLS and pool settings.
-  url.search = '';
-  const sql = postgres(url.href, {
-    ssl: { rejectUnauthorized: true, servername: url.hostname, ...(ca && { ca }) },
+  return certificates;
+}
+
+function connectionOptions(databaseUrl, ca) {
+  if (!databaseUrl?.trim()) throw configurationError('DATABASE_URL_MISSING');
+  let url, username, password, database;
+  try {
+    url = new URL(databaseUrl.trim());
+    username = decodeURIComponent(url.username);
+    password = decodeURIComponent(url.password);
+    database = decodeURIComponent(url.pathname.slice(1));
+    if (!['postgres:', 'postgresql:'].includes(url.protocol) || !url.hostname || !username
+        || !password || !database || url.hash || (url.port && Number(url.port) === 0)) {
+      throw new Error();
+    }
+  } catch {
+    throw configurationError('DATABASE_URL_INVALID');
+  }
+  if (url.hostname.endsWith('.pooler.supabase.com') && !/^[^.]+\.[^.]+$/.test(username)) {
+    throw configurationError('DATABASE_POOLER_USER_INVALID');
+  }
+  const sslModes = url.searchParams.getAll('sslmode');
+  if (sslModes.length > 1 || sslModes.some(mode => !['require', 'verify-ca', 'verify-full'].includes(mode))) {
+    throw configurationError('DATABASE_SSLMODE_INVALID');
+  }
+  const certificates = normalizeCa(ca);
+  const host = url.hostname.replace(/^\[(.*)\]$/, '$1');
+  // URL query options cannot override TLS verification or transaction-pooler settings.
+  return {
+    host, port: Number(url.port || 5432), username, password, database,
+    ssl: { rejectUnauthorized: true, ...(certificates && { ca: certificates }) },
     max: 1,
     prepare: false,
     fetch_types: false,
     connect_timeout: 5,
     idle_timeout: 20,
-  });
-  return createStore(sql);
+  };
+}
+
+function postgresStore(databaseUrl, ca) {
+  return createStore(postgres(connectionOptions(databaseUrl, ca)));
 }
 
 function createStore(sql) {
   return {
     async check() {
-      await sql.unsafe(`SELECT id FROM ${schema}.users LIMIT 0`);
+      await sql.unsafe(`SELECT u.id, s.token_hash FROM ${schema}.users u
+        JOIN ${schema}.sessions s ON s.user_id = u.id LIMIT 0`);
     },
     close: () => sql.end(),
     async getUser(email) {
@@ -200,4 +248,4 @@ function createStore(sql) {
   };
 }
 
-module.exports = { postgresStore, createStore };
+module.exports = { postgresStore, createStore, connectionOptions };

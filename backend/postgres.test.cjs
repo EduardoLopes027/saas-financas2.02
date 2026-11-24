@@ -5,13 +5,16 @@ const { readFile } = require('node:fs/promises');
 const { createServer } = require('node:http');
 const { join } = require('node:path');
 const { createRequire } = require('node:module');
+const { X509Certificate } = require('node:crypto');
+const { rootCertificates } = require('node:tls');
 const test = require('node:test');
 const { createHandler } = require('./auth.cjs');
 
 const dependencyRoot = process.env.FINFLOW_PGLITE_DIR;
 const origin = 'https://finflow.example.test';
 
-test('A função da Vercel devolve 503 sem DATABASE_URL', async t => {
+test('A função da Vercel registra a causa do 503 sem expor credenciais e permite nova tentativa', async t => {
+  const log = t.mock.method(console, 'error', () => {});
   const previous = process.env;
   process.env = { ...previous, APP_ORIGIN: origin };
   delete process.env.DATABASE_URL;
@@ -20,9 +23,42 @@ test('A função da Vercel devolve 503 sem DATABASE_URL', async t => {
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   t.after(() => new Promise(resolve => server.close(resolve)));
 
-  const response = await fetch('http://127.0.0.1:' + server.address().port + '/api/auth/session');
-  assert.equal(response.status, 503);
-  assert.deepEqual(await response.json(), { error: 'service_unavailable' });
+  const endpoint = 'http://127.0.0.1:' + server.address().port + '/api/auth/session';
+  const first = await fetch(endpoint);
+  assert.equal(first.status, 503);
+  assert.deepEqual(await first.json(), { error: 'service_unavailable' });
+  assert.match(log.mock.calls[0].arguments[0], /\[DATABASE_URL_MISSING\]/);
+
+  const listener = createServer();
+  await new Promise(resolve => listener.listen(0, '127.0.0.1', resolve));
+  const port = listener.address().port;
+  await new Promise(resolve => listener.close(resolve));
+  process.env.DATABASE_URL = 'postgres://test:senha-ficticia-secreta@127.0.0.1:' + port + '/postgres';
+  delete process.env.DATABASE_CA_CERT;
+  const second = await fetch(endpoint);
+  assert.equal(second.status, 503);
+  assert.match(log.mock.calls[1].arguments[0], /\[ECONNREFUSED\]/);
+  assert.doesNotMatch(JSON.stringify(log.mock.calls.map(call => call.arguments)), /senha-ficticia-secreta/);
+});
+
+test('Configura o pooler com TLS verificado e reconstrói certificados PEM', () => {
+  const { connectionOptions } = require('./postgres.cjs');
+  const url = 'postgresql://finflow_app.project:abc%40%2F%25@aws-0-region.pooler.supabase.com:6543/postgres'
+    + '?sslmode=require&prepare=true';
+  const pem = rootCertificates[0].trim();
+  for (const ca of [pem, pem.replace(/\n/g, '\\n'), pem.replace(/\n/g, ' '), pem.replace(/\n/g, '')]) {
+    const options = connectionOptions(url, ca);
+    assert.equal(options.port, 6543);
+    assert.equal(options.username, 'finflow_app.project');
+    assert.equal(options.password, 'abc@/%');
+    assert.equal(options.database, 'postgres');
+    assert.equal(options.prepare, false);
+    assert.deepEqual(options.ssl, { rejectUnauthorized: true, ca: [new X509Certificate(pem).toString()] });
+  }
+  assert.throws(() => connectionOptions(url, 'invalid'), { code: 'DATABASE_CA_CERT_INVALID' });
+  assert.throws(() => connectionOptions(url.replace('.project:', ':')), { code: 'DATABASE_POOLER_USER_INVALID' });
+  assert.throws(() => connectionOptions(url.replace('require', 'disable')), { code: 'DATABASE_SSLMODE_INVALID' });
+  assert.throws(() => connectionOptions(url.replace('%40', '%ZZ')), { code: 'DATABASE_URL_INVALID' });
 });
 
 test('PostgreSQL descartável: esquema, autenticação, edição, anexos e recorrência', {
