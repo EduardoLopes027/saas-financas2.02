@@ -42,6 +42,8 @@ Erros retornam `{"error":"codigo"}`. Trate 400 para entrada inválida, 401 para 
 |---|---|
 | GET /api/transactions | 200 com `{ "items": [...] }`, do mais recente ao mais antigo por data e, em caso de empate, por ID. Uma conta nova recebe uma lista vazia. |
 | POST /api/transactions | 201 com `{ "item": { ... } }`. Envie JSON na mesma origem. |
+| DELETE /api/transactions/:id | 204. Exclui a linha indicada e seu comprovante. |
+| GET /api/transactions/:id/receipt | 200 com o arquivo para download. |
 
 Exemplo fictício do corpo de POST:
 
@@ -53,10 +55,26 @@ O item contém os mesmos campos e um `id` numérico gerado pelo servidor. `amoun
 
 - `Receita` admite `Salário` e `Outras receitas`.
 - `Despesa` admite `Moradia`, `Alimentação`, `Transporte`, `Lazer` e `Outras despesas`.
+- `Transferência` exige categoria `Transferência` e origem e destino distintos em `paymentMethod` e `destinationPaymentMethod`. Ambos usam a lista de formas de pagamento. A linha representa uma transferência interna de efeito líquido zero. Ao somar saldo, projeção, receitas ou despesas, a interface deve somar exclusivamente `Receita` e `Despesa`.
+
+`paymentMethod` admite `Pix`, `Cartão de crédito`, `Cartão de débito`, `Débito automático`, `Boleto bancário`, `Transferência` e `Crédito em conta`. `status` admite `Pago` e `Pendente` e é copiado para parcelas e ocorrências. O status continua sem efeito nas regras de saldo. `notes` aceita até 2.000 caracteres e preserva as hashtags como texto.
+
+- **Parcelas.** `installments` é um inteiro entre 1 e 48. `amount` é o total e precisa ter ao menos um centavo por parcela. O servidor grava todas as parcelas em uma operação. Por exemplo, 100 centavos em três parcelas geram 34, 33 e 33. O POST devolve a primeira linha. Cada linha de um parcelamento inclui `installments` e `installmentNumber`. Atualize a lista com GET após salvar.
+- **Recorrência.** `recurrence` admite `Semanal`, `Mensal` e `Anual`. Pode ser combinada apenas com `installments` igual a 1 ou omitido. O POST cria a primeira linha. O GET grava as ocorrências vencidas até a data civil local do servidor, inclusive, com um cursor persistente que impede duplicação. Parcelas e recorrências mensais ou anuais mantêm o dia original, ajustado para o último dia quando necessário. Por exemplo, 31 de janeiro, 28 de fevereiro e 31 de março em um ano comum.
+- **Exclusão.** O DELETE remove apenas a linha indicada. Ocorrências excluídas não reaparecem. A agenda segue ativa e esta API ainda não tem rota para cancelá-la.
+- **Comprovante.** Envie `receipt: { name, mimeType, dataBase64 }`, com base64 padrão sem prefixo de data URL e até 5 MiB decodificados. Tipos aceitos são `application/pdf`, `image/png` e `image/jpeg`. A validação confere assinaturas do formato. O arquivo pertence à primeira linha do lançamento e fica no SQLite. POST e GET retornam apenas `receipt: { name, mimeType, size }`, com tamanho em bytes. O download exige sessão da conta titular.
 
 A sessão identifica a conta em cada consulta e gravação. Campos extras enviados pelo cliente são ignorados. O cookie agora cobre `/api`. Se o navegador só tiver um cookie da versão anterior, faça login novamente para usar os lançamentos. Os dados permanecem no SQLite após reiniciar o servidor.
 
-Erros seguem `{"error":"codigo"}`. Use 400 para `invalid_transaction` ou `invalid_json`, 401 para `unauthenticated`, 403 para origem ou host recusados, 413 para corpo acima de 4 KiB e 415 para POST sem JSON.
+Erros seguem `{"error":"codigo"}`. A API retorna 400 para `invalid_transaction` ou `invalid_json`, 401 para `unauthenticated`, 403 para origem ou host recusados, 404 para lançamento ou comprovante ausente ou fora da conta, 413 para o JSON de lançamento acima do limite (base64 de 5 MiB mais 32 KiB) e 415 para POST sem JSON. O teto das rotas de autenticação continua em 4 KiB.
+
+Para testar com um banco descartável, use uma sessão PowerShell na raiz do repositório. A porta `0` pede uma porta livre, exibida pelo servidor.
+
+```powershell
+$env:FINFLOW_DATABASE_PATH = Join-Path ([IO.Path]::GetTempPath()) ("finflow-" + [guid]::NewGuid() + ".sqlite")
+$env:FINFLOW_AUTH_PORT = "0"
+npm.cmd start
+```
 
 ## Antes de produção na Vercel
 

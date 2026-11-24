@@ -5,7 +5,7 @@ const initial = [
   {description:'Transporte por aplicativo',date:'2026-11-14',type:'Despesa',category:'Transporte',amount:12850,paymentMethod:'Cartão de débito',status:'Pago'},
   {description:'Cinema',date:'2026-11-15',type:'Despesa',category:'Lazer',amount:8400,paymentMethod:'Pix',status:'Pago'}
 ];
-const categories = {Receita:['Salário','Outras receitas'],Despesa:['Moradia','Alimentação','Transporte','Lazer','Outras despesas']};
+const categories = {Receita:['Salário','Outras receitas'],Despesa:['Moradia','Alimentação','Transporte','Lazer','Outras despesas'],Transferência:['Transferência']};
 const currency = new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'});
 const format = cents => currency.format(cents/100);
 const demoDate = '2026-11-17';
@@ -45,6 +45,7 @@ let logoutProblem = false;
 let authNotice = '';
 let message = '';
 let draft = null;
+let suspendedDraft = null;
 const escape = value => String(value).replace(/[&<>"']/g,char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
 const records = () => appMode === 'demo' && scenario.value === 'empty' ? [] : entries;
 const newest = items => [...items].reverse().sort((a,b)=>
@@ -54,7 +55,8 @@ const add = '<a class="nav primary" href="#novo"><span aria-hidden="true">＋</s
 const rows = (items, recent = false) => '<ul>' + items.map(item => {
   const date = item.date.split('-').reverse().join('/');
   const expense = item.type === 'Despesa';
-  const tone = expense ? 'debit' : 'credit';
+  const transfer = item.type === 'Transferência';
+  const tone = transfer ? 'neutral' : expense ? 'debit' : 'credit';
   const iconTone = recent && item.category === 'Transporte' ? ' transport' : recent && item.category === 'Lazer' ? ' fun' : '';
   const icon = recent ? '<span class="material-symbols-outlined">' + ({
     Salário:'account_balance', Moradia:'account_balance_wallet', Alimentação:'shopping_basket',
@@ -63,7 +65,7 @@ const rows = (items, recent = false) => '<ul>' + items.map(item => {
   const metadata = recent
     ? '<small class="recent-meta"><span class="recent-tag ' + tone + '">' + item.category + '</span><span>' + date + '</span></small>'
     : '<small>' + date + ' · ' + item.category + ' · ' + item.type + '</small>';
-  const amount = '<strong class="money '+tone+'">'+(expense?'−':'+')+format(item.amount)+'</strong>';
+  const amount = '<strong class="money '+tone+'">'+(transfer?'':expense?'−':'+')+format(item.amount)+'</strong>';
   return '<li class="row"><div class="row-info"><span aria-hidden="true" class="movement '+tone+iconTone+'">'+icon+'</span><div><strong>'+escape(item.description)+'</strong><br>'+metadata+'</div></div>'
     + (recent ? '<div class="recent-amount">' + amount + '<small>' + item.type + '</small></div>' : amount) + '</li>';
 }).join('') + '</ul>';
@@ -268,7 +270,7 @@ const categoryIcons = {
   Salário:'account_balance', Moradia:'account_balance_wallet', Alimentação:'shopping_basket',
   Transporte:'local_taxi', Lazer:'subscriptions'
 };
-const signedMoney = (amount, sign) => (amount ? sign + ' ' : '') + format(Math.abs(amount));
+const signedMoney = (amount, sign) => (amount && sign ? sign + ' ' : '') + format(Math.abs(amount));
 
 function adjacentMonth(month, step){
   if(!month || (month === '0001-01' && step < 0) || (month === '9999-12' && step > 0)) return '';
@@ -292,19 +294,20 @@ function filteredTransactions(inPeriod){
 
 function transactionRow(item){
   const income = item.type === 'Receita';
-  const tone = income ? 'income' : 'expense';
+  const transfer = item.type === 'Transferência';
+  const tone = transfer ? 'transfer' : income ? 'income' : 'expense';
   const date = transactionDate.format(new Date(item.date + 'T00:00:00Z'));
   const status = transactionStatuses.includes(item.status) ? item.status : '';
-  const icon = categoryIcons[item.category] ?? 'payments';
+  const icon = categoryIcons[item.category] ?? (transfer ? 'sync_alt' : 'payments');
   return '<tr role="row" data-tone="' + tone + '">'
     + '<td role="cell"><time datetime="' + item.date + '">' + date + '</time></td>'
     + '<td role="cell"><div class="transactions-description"><span class="transactions-category-icon material-symbols-outlined" aria-hidden="true">' + icon + '</span><strong>' + escape(item.description) + '</strong></div></td>'
     + '<td role="cell"><span class="transactions-category">' + escape(item.category) + '</span></td>'
-    + '<td role="cell"><span class="transactions-payment">' + escape(item.paymentMethod || 'Não informada') + '</span></td>'
+    + '<td role="cell"><span class="transactions-payment">' + escape(item.paymentMethod || 'Não informada') + (item.destinationPaymentMethod ? ' → ' + escape(item.destinationPaymentMethod) : '') + '</span></td>'
     + '<td role="cell"><span class="transactions-status" data-status="' + (status ? status.toLowerCase() : 'unknown') + '">'
     + (status ? '<span aria-hidden="true">' + (status === 'Pago' ? '✓' : '◷') + '</span> ' : '') + (status || 'Não informado') + '</span></td>'
-    + '<td role="cell" class="transactions-amount" data-tone="' + tone + '">' + signedMoney(item.amount, income ? '+' : '−') + '</td>'
-    + '<td role="cell" class="transactions-action"><button type="button" class="transactions-delete" data-delete-id="' + item.id + '" aria-label="Excluir lançamento ' + escape(item.description) + ' de ' + date + '" title="Excluir lançamento"' + (deletingTransactionIds.has(item.id) ? ' disabled' : '') + '><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3m3 0-1 13H7L6 7m4 4v6m4-6v6"/></svg></button></td>'
+    + '<td role="cell" class="transactions-amount" data-tone="' + tone + '">' + signedMoney(item.amount, transfer ? '' : income ? '+' : '−') + '</td>'
+    + '<td role="cell" class="transactions-action">' + receiptLink(item) + '<button type="button" class="transactions-delete" data-delete-id="' + item.id + '" aria-label="Excluir lançamento ' + escape(item.description) + ' de ' + date + '" title="Excluir lançamento"' + (deletingTransactionIds.has(item.id) ? ' disabled' : '') + '><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3m3 0-1 13H7L6 7m4 4v6m4-6v6"/></svg></button></td>'
     + '</tr>';
 }
 
@@ -504,92 +507,14 @@ function mountTransactions(){
   main.querySelector('.transactions-table tbody').addEventListener('click', event => {
     const button = event.target.closest('button[data-delete-id]');
     if(button) deleteTransaction(Number(button.dataset.deleteId));
+    const receipt = event.target.closest('[data-receipt-id]');
+    if(receipt) downloadDemoReceipt(Number(receipt.dataset.receiptId));
   });
   updateTransactionPeriod();
   updateTransactionTypes();
   listResults();
 }
 
-function form(){
-  const data=draft??{type:'Despesa',amount:'',date:accountUser?localCalendarDate():demoDate,category:'',description:''};
-  return '<form class="card form" novalidate><fieldset><legend>Tipo de lançamento</legend>'+Object.keys(categories).map(type=>'<label class="radio"><input type="radio" name="kind" value="'+type+'" '+(data.type===type?'checked':'')+'>'+type+'</label>').join('')+'</fieldset><div class="fields"><label>Valor (R$)<input name="amount" required inputmode="decimal" placeholder="0,00" value="'+escape(data.amount)+'" aria-describedby="amount-help amount-error"><small id="amount-help">Exemplo: 123,45</small><span class="field-error" id="amount-error"></span></label><label>Data<input name="date" type="date" required value="'+escape(data.date)+'" aria-describedby="date-error"><span class="field-error" id="date-error"></span></label><label class="wide">Categoria<select name="category" required aria-describedby="category-error"><option value="">Selecione</option>'+options(categories[data.type],data.category)+'</select><span class="field-error" id="category-error"></span></label><label>Forma de pagamento (opcional)<select name="paymentMethod"><option value="">Não informada</option>'+options(paymentMethods,data.paymentMethod)+'</select></label><label>Status (opcional)<select name="status"><option value="">Não informado</option>'+options(transactionStatuses,data.status)+'</select></label><label class="wide">Descrição (opcional)<input name="description" maxlength="80" value="'+escape(data.description)+'"></label></div><div id="form-status" role="alert"></div><div class="actions"><button class="primary" type="submit">Salvar lançamento</button><a class="nav" id="cancel" href="#lancamentos">Cancelar</a></div></form>';
-}
-function formDraft(element){
-  const data=new FormData(element);
-  return {
-    type:data.get('kind'),amount:data.get('amount'),date:data.get('date'),
-    category:data.get('category'),description:data.get('description'),
-    paymentMethod:data.get('paymentMethod') || null,status:data.get('status') || null
-  };
-}
-function parseCents(value){
-  const raw=value.trim().replace(/^R\$\s*/,'');
-  if(!/^(?:\d{1,9}|\d{1,3}(?:\.\d{3}){1,2})(?:,\d{1,2})?$/.test(raw)) return 0;
-  const [whole,decimal='']=raw.replaceAll('.','').split(',');
-  return Number(whole)*100+Number(decimal.padEnd(2,'0'));
-}
-function wireForm(){
-  const element=main.querySelector('form');
-  const field=name=>element.elements.namedItem(name);
-  const status=document.querySelector('#form-status');
-  function error(name,text){
-    document.querySelector('#'+name+'-error').textContent=text;
-    if(text) field(name).setAttribute('aria-invalid','true');
-    else field(name).removeAttribute('aria-invalid');
-  }
-  element.addEventListener('change',event=>{
-    if(event.target.name!=='kind') return;
-    field('category').innerHTML='<option value="">Selecione</option>'+options(categories[field('kind').value],'');
-    error('category','');
-  });
-  document.querySelector('#cancel').addEventListener('click',()=>{draft=null;});
-  element.addEventListener('submit',async event=>{
-    event.preventDefault();
-    if(saveBusy) return;
-    draft=formDraft(element);
-    const cents=parseCents(draft.amount);
-    const errors={amount:cents>0?'':'Informe um valor maior que zero, como 123,45.',date:draft.date&&field('date').validity.valid?'':'Informe uma data válida.',category:categories[draft.type].includes(draft.category)?'':'Selecione uma categoria.'};
-    status.className='';
-    status.textContent='';
-    Object.entries(errors).forEach(([name,value])=>error(name,value));
-    const invalid=Object.keys(errors).find(name=>errors[name]);
-    if(invalid){field(invalid).focus();return;}
-    if(appMode==='demo'&&scenario.value==='save'){
-      status.className='notice error';
-      status.textContent='Não foi possível salvar. Seus dados continuam no formulário. Troque o cenário para Dados fictícios e tente novamente.';
-      return;
-    }
-    const record={...draft,description:draft.description.trim()||draft.category,amount:cents};
-    if(accountUser){
-      const epoch=accountEpoch;
-      const submit=element.querySelector('button[type=submit]');
-      submit.disabled=true;
-      saveBusy=true;
-      try{
-        const payload=await apiRequest('/api/transactions',record);
-        if(epoch!==accountEpoch) return;
-        entries.push(requireTransaction(payload.item));
-      }catch(error){
-        if(epoch!==accountEpoch) return;
-        if(error.status===401){expireAccount();return;}
-        status.className='notice error';
-        status.textContent=error.status===400?'Confira os dados do lançamento.':'Não foi possível confirmar o salvamento. Verifique a lista antes de tentar novamente.';
-        return;
-      }finally{
-        if(epoch===accountEpoch){saveBusy=false;submit.disabled=false;}
-      }
-    }else{
-      if(scenario.value==='empty'){entries=[];scenario.value='normal';}
-      entries.push(record);
-    }
-    search.value='';
-    query='';
-    resetTransactionFilters(record.date.slice(0,7));
-    draft=null;
-    message='Lançamento salvo.';
-    location.hash='lancamentos';
-  });
-}
 const accountTools = document.querySelector('.account-tools');
 const accountChannel = appMode === 'checking' && typeof BroadcastChannel === 'function'
   ? new BroadcastChannel('finflow-account-local') : null;
@@ -635,7 +560,20 @@ function forgetAccount(){
   listPageSize=10;
 }
 
+function suspendEntryDraft(user, entryDraft){
+  if(user && entryDraft && location.hash==='#novo'){
+    suspendedDraft={ownerId:user.id,entryDraft};
+  }
+}
+
+function resumeEntryDraft(user){
+  const entryDraft=suspendedDraft?.ownerId===user.id ? suspendedDraft.entryDraft : null;
+  suspendedDraft=null;
+  return entryDraft;
+}
+
 function expireAccount(){
+  suspendEntryDraft(accountUser,draft);
   forgetAccount();
   authNotice='Sua sessão expirou. Entre novamente para continuar.';
   document.querySelector('.toolbar-settings').open=false;
@@ -662,9 +600,9 @@ async function loadAccountTransactions(){
 async function restoreAccount(){
   const initialProbe=appMode==='checking';
   const previousUser=accountUser;
-  const previousForm=main.querySelector('form.form:not(.account-card)');
-  const previousDraft=previousForm && location.hash==='#novo' ? formDraft(previousForm) : draft;
+  const previousDraft=draft;
   const previousView={month:homeMonth,filters:{...filters},query,search:search.value,balanceHidden,listPage,listPageSize};
+  suspendEntryDraft(previousUser,previousDraft);
   forgetAccount();
   const epoch=accountEpoch;
   authBusy=true;
@@ -676,8 +614,9 @@ async function restoreAccount(){
     if(epoch!==accountEpoch) return;
     appMode='account';
     accountUser=user;
+    draft=resumeEntryDraft(user);
     if(user.id===previousUser?.id){
-      draft=previousDraft;
+      draft=previousDraft ?? draft;
       homeMonth=previousView.month;
       Object.assign(filters,previousView.filters);
       ({listPage,listPageSize}=previousView);
@@ -689,7 +628,7 @@ async function restoreAccount(){
     if(epoch!==accountEpoch) return;
     if(initialProbe && error.status===404){
       appMode='demo';
-      entries=[...initial];
+      entries=initial.map((item,index)=>({...item,id:index+1}));
       homeMonth=demoMonth;
       filters.month=demoMonth;
     }else{
@@ -706,6 +645,7 @@ async function restoreAccount(){
 
 async function logout(){
   if(authBusy) return;
+  suspendedDraft=null;
   forgetAccount();
   const epoch=accountEpoch;
   authBusy=true;
@@ -806,7 +746,9 @@ async function submitAccount(event, register){
     authNotice='';
     authBusy=false;
     accountChannel?.postMessage('account-changed');
-    if(location.hash!=='#painel') location.hash='painel';
+    draft=resumeEntryDraft(user);
+    const destination=draft ? '#novo' : '#painel';
+    if(location.hash!==destination) location.hash=destination;
     await loadAccountTransactions();
   }catch(error){
     if(epoch!==accountEpoch) return;
@@ -833,6 +775,7 @@ function render(focus){
   updateAccountChrome(authPreview);
   const listRoute=location.hash==='#lancamentos' && !authPreview && (appMode==='demo'||accountUser);
   document.body.classList.toggle('transactions-view',!!listRoute);
+  document.body.classList.toggle('entry-view',location.hash==='#novo' && (appMode==='demo' || accountUser && accountState==='ready'));
   if(authPreview||(appMode!=='demo'&&!accountUser)){
     document.body.classList.remove('home-view');
     renderAccountGate(focus,authPreview);
@@ -848,16 +791,16 @@ function render(focus){
   const view=['lancamentos','novo'].includes(location.hash.slice(1))?location.hash.slice(1):'painel';
   document.body.classList.toggle('home-view', view === 'painel');
   document.querySelectorAll('nav a').forEach(a=>{
-    if(a.hash==='#'+view) a.setAttribute('aria-current','page');else a.removeAttribute('aria-current');
+    if(a.hash==='#'+(view==='novo'?'lancamentos':view)) a.setAttribute('aria-current','page');else a.removeAttribute('aria-current');
   });
   const heading = '<h1 tabindex="-1">' + (view==='novo'?'Novo lançamento':'Lançamentos') + '</h1>';
   const demoLoadError=appMode==='demo'&&scenario.value==='load';
   if(view==='painel') mountHome(!demoLoadError);
-  else if(view==='novo'||demoLoadError) main.innerHTML='<div class="intro">'+heading+'</div>';
+  else if(demoLoadError && view!=='novo') main.innerHTML='<div class="intro">'+heading+'</div>';
   if(view!=='novo'&&demoLoadError){
     main.insertAdjacentHTML('beforeend','<section class="card state-card"><p class="error" role="alert">Não foi possível carregar os dados.</p><button id="retry">Tentar novamente</button></section>');
     document.querySelector('#retry').onclick=()=>{scenario.value='normal';render(true);};
-  }else if(view==='novo'){main.insertAdjacentHTML('beforeend',form());wireForm();}
+  }else if(view==='novo') mountEntry();
   else if(view==='lancamentos') mountTransactions();
   main.querySelector('#home-month')?.addEventListener('change',event=>{
     homeMonth=event.currentTarget.value;
@@ -923,7 +866,7 @@ document.addEventListener('click',event=>{
 document.querySelector('.skip').addEventListener('click',event=>{event.preventDefault();main.focus();});
 scenario.addEventListener('change',()=>{
   if(appMode!=='demo') return;
-  if(location.hash==='#novo'&&main.querySelector('form')){draft=formDraft(main.querySelector('form'));return;}
+  if(location.hash==='#novo' && saveBusy) return;
   render(false);
 });
 window.addEventListener('hashchange',()=>{

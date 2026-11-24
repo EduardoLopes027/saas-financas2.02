@@ -6,7 +6,7 @@ const { createServer } = require('node:http');
 const { dirname, join } = require('node:path');
 const { DatabaseSync } = require('node:sqlite');
 const { promisify } = require('node:util');
-const { transactionFields, transactionStore } = require('./transactions.cjs');
+const { transactionFields, transactionStore, MAX_TRANSACTION_BODY } = require('./transactions.cjs');
 
 const deriveKey = promisify(scrypt);
 const COOKIE = 'finflow_session';
@@ -24,7 +24,9 @@ const assets = new Map([
   ["/assets/css/auth.css",["assets/css/auth.css","text/css; charset=utf-8"]],
   ["/assets/css/transactions.css",["assets/css/transactions.css","text/css; charset=utf-8"]],
   ["/assets/css/stitch-home.css",["assets/css/stitch-home.css","text/css; charset=utf-8"]],
+  ["/assets/css/new-entry.css",["assets/css/new-entry.css","text/css; charset=utf-8"]],
   ["/assets/js/app.js",["assets/js/app.js","text/javascript; charset=utf-8"]],
+  ["/assets/js/new-entry.js",["assets/js/new-entry.js","text/javascript; charset=utf-8"]],
   ["/assets/images/FinFlow-avatar.jpg",["assets/images/FinFlow-avatar.jpg","image/jpeg"]],
   ["/assets/fonts/InterVariable.woff2",["assets/fonts/InterVariable.woff2","font/woff2"]],
   ["/assets/fonts/HankenGrotesk.woff2",["assets/fonts/HankenGrotesk.woff2","font/woff2"]],
@@ -48,12 +50,12 @@ function json(response, status, body) {
   }).end(JSON.stringify(body));
 }
 
-async function readJson(request) {
+async function readJson(request, limit = 4096) {
   const chunks = [];
   let size = 0;
   for await (const chunk of request.iterator({ destroyOnReturn: false })) {
     size += chunk.length;
-    if (size > 4096) throw new HttpError(413, 'body_too_large');
+    if (size > limit) throw new HttpError(413, 'body_too_large');
     chunks.push(chunk);
   }
   let body;
@@ -214,6 +216,8 @@ async function start({ databasePath = join(__dirname, '.local', 'auth.sqlite'), 
       const route = request.method + ' ' + pathname;
 
       const deleteTransaction = request.method === 'DELETE' && pathname.startsWith('/api/transactions/');
+      const downloadReceipt = request.method === 'GET' && pathname.startsWith('/api/transactions/')
+        && pathname.endsWith('/receipt');
       const jsonPost = route.startsWith('POST /api/auth/') || route === 'POST /api/transactions';
       if (jsonPost || deleteTransaction) {
         const origin = request.headers.origin;
@@ -224,12 +228,25 @@ async function start({ databasePath = join(__dirname, '.local', 'auth.sqlite'), 
         if (jsonPost && type !== 'application/json') throw new HttpError(415, 'json_required');
       }
 
-      if (deleteTransaction) {
+      if (deleteTransaction || downloadReceipt) {
         const user = requireSession(request);
-        const rawId = pathname.slice('/api/transactions/'.length);
+        const rawId = pathname.slice('/api/transactions/'.length, downloadReceipt ? -'/receipt'.length : undefined);
         const id = Number(rawId);
         if (!/^[1-9]\d*$/.test(rawId) || !Number.isSafeInteger(id)) {
           throw new HttpError(400, 'invalid_transaction');
+        }
+        if (downloadReceipt) {
+          const receipt = transactions.receipt(user.id, id);
+          if (!receipt) throw new HttpError(404, 'not_found');
+          const filename = encodeURIComponent(receipt.name)
+            .replace(/['()*]/g, character => '%' + character.charCodeAt(0).toString(16));
+          return response.writeHead(200, {
+            'Content-Type': receipt.mimeType,
+            'Content-Disposition': "attachment; filename*=UTF-8''" + filename,
+            'Content-Length': receipt.bytes.length,
+            'Cache-Control': 'no-store',
+            'X-Content-Type-Options': 'nosniff',
+          }).end(receipt.bytes);
         }
         if (!transactions.remove(user.id, id)) throw new HttpError(404, 'not_found');
         return response.writeHead(204, { 'Cache-Control': 'no-store' }).end();
@@ -253,7 +270,7 @@ async function start({ databasePath = join(__dirname, '.local', 'auth.sqlite'), 
         }
         case 'POST /api/transactions': {
           requireSession(request);
-          const fields = transactionFields(await readJson(request));
+          const fields = transactionFields(await readJson(request, MAX_TRANSACTION_BODY));
           const { id } = requireSession(request);
           if (!fields) throw new HttpError(400, 'invalid_transaction');
           return json(response, 201, { item: transactions.create(id, fields) });
@@ -291,7 +308,10 @@ async function start({ databasePath = join(__dirname, '.local', 'auth.sqlite'), 
 }
 
 if (require.main === module) {
-  start({ port: Number(process.env.FINFLOW_AUTH_PORT ?? 4174) })
+  start({
+    port: Number(process.env.FINFLOW_AUTH_PORT ?? 4174),
+    databasePath: process.env.FINFLOW_DATABASE_PATH,
+  })
     .then(({ url }) => console.log('FinFlow local: ' + url))
     .catch(error => {
       console.error(error.message);

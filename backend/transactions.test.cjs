@@ -8,7 +8,7 @@ const { join } = require('node:path');
 const { DatabaseSync } = require('node:sqlite');
 const { test } = require('node:test');
 const { start } = require('./auth.cjs');
-const { transactionStore } = require('./transactions.cjs');
+const { transactionFields, transactionStore, MAX_TRANSACTION_BODY } = require('./transactions.cjs');
 
 test('lançamentos persistem e ficam isolados entre duas contas', async t => {
   const directory = await mkdtemp(join(tmpdir(), 'finflow-transactions-'));
@@ -87,16 +87,116 @@ test('lançamentos persistem e ficam isolados entre duas contas', async t => {
   assert.deepEqual(await items(a.cookie), [second, first]);
   assert.deepEqual(await items(b.cookie), [third]);
 
+  const pdf = Buffer.alloc(5 * 1024 * 1024, 32);
+  pdf.write('%PDF-1.4\n');
+  pdf.write('%%EOF\n', pdf.length - 6);
+  const receipt = { name: 'Recibo fictício.pdf', mimeType: 'application/pdf', dataBase64: pdf.toString('base64') };
+  const transfer = {
+    type: 'Transferência', category: 'Transferência', amount: 100, date: expense.date,
+    paymentMethod: 'Pix', destinationPaymentMethod: 'Crédito em conta', notes: 'Interna #reserva',
+  };
+  for (const body of [
+    { ...transfer, destinationPaymentMethod: 'Pix' },
+    { ...expense, installments: 49 },
+    { ...expense, amount: 2, installments: 3 },
+    { ...expense, installments: 2, recurrence: 'Mensal' },
+    { ...expense, receipt: { ...receipt, mimeType: 'image/png' } },
+    { ...expense, receipt: { ...receipt, dataBase64: Buffer.concat([pdf, Buffer.from(' ')]).toString('base64') } },
+  ]) {
+    assert.equal((await api(path, { body, cookie: a.cookie })).status, 400);
+  }
+  const oversized = await api(path, { body: { notes: 'x'.repeat(MAX_TRANSACTION_BODY) }, cookie: a.cookie });
+  assert.equal(oversized.status, 413);
+  const fourth = await add(a.cookie, { ...transfer, receipt });
+  const summary = { name: receipt.name, mimeType: receipt.mimeType, size: pdf.length };
+  assert.deepEqual(fourth, { id: fourth.id, description: transfer.category, ...transfer, receipt: summary });
+  assert.deepEqual(await items(a.cookie), [fourth, second, first]);
+  assert.deepEqual(await items(b.cookie), [third]);
+
   await close();
   app = await start({ port: 0, databasePath });
-  assert.deepEqual(await items(a.cookie), [second, first]);
+  assert.deepEqual(await items(a.cookie), [fourth, second, first]);
   assert.deepEqual(await items(b.cookie), [third]);
+  const download = path + '/' + fourth.id + '/receipt';
+  assert.equal((await api(download)).status, 401);
+  assert.equal((await api(download, { cookie: b.cookie })).status, 404);
+  const file = await api(download, { cookie: a.cookie });
+  assert.equal(file.status, 200);
+  assert.equal(file.headers.get('content-type'), receipt.mimeType);
+  assert.match(file.headers.get('content-disposition'), /^attachment;/);
+  assert.deepEqual(Buffer.from(await file.arrayBuffer()), pdf);
+  const deleted = await fetch(app.url + path + '/' + fourth.id, {
+    method: 'DELETE', headers: { Cookie: a.cookie },
+  });
+  assert.equal(deleted.status, 204);
+  assert.equal((await api(download, { cookie: a.cookie })).status, 404);
 
   const logout = await api('/api/auth/logout', { body: {}, cookie: a.cookie });
   assert.equal(logout.status, 204);
   assert.equal((await api(path, { cookie: a.cookie })).status, 401);
   assert.equal((await api(path, { cookie: a.cookie, body: expense })).status, 401);
   assert.deepEqual(await items(b.cookie), [third]);
+});
+
+test('parcelas são exatas, ancoradas na data original e gravadas juntas', t => {
+  const db = new DatabaseSync(':memory:');
+  t.after(() => db.close());
+  db.exec('CREATE TABLE users (id INTEGER PRIMARY KEY) STRICT; INSERT INTO users VALUES (1)');
+  const store = transactionStore(db);
+  const fields = transactionFields({
+    type: 'Despesa', category: 'Moradia', amount: Number.MAX_SAFE_INTEGER,
+    date: '2028-01-31', installments: 3, status: 'Pendente',
+  });
+  db.exec(`
+    CREATE TRIGGER reject_second BEFORE INSERT ON transactions WHEN NEW.installment_number = 2
+    BEGIN SELECT RAISE(ABORT, 'falha de teste'); END;
+  `);
+  assert.throws(() => store.create(1, fields), /falha de teste/);
+  assert.deepEqual(store.list(1), []);
+  db.exec('DROP TRIGGER reject_second');
+  const first = store.create(1, fields);
+  const items = store.list(1).reverse();
+  assert.deepEqual(items[0], first);
+  assert.deepEqual(items.map(item => item.date), ['2028-01-31', '2028-02-29', '2028-03-31']);
+  assert.deepEqual(items.map(item => item.installmentNumber), [1, 2, 3]);
+  assert.deepEqual(items.map(item => item.status), ['Pendente', 'Pendente', 'Pendente']);
+  assert.deepEqual(items.map(item => item.amount), [3002399751580331, 3002399751580330, 3002399751580330]);
+  assert.equal(items.reduce((total, item) => total + BigInt(item.amount), 0n), BigInt(fields.amount));
+});
+
+test('recorrências persistem, preservam a âncora e não recriam ocorrências excluídas', async t => {
+  const directory = await mkdtemp(join(tmpdir(), 'finflow-recurrences-'));
+  const databasePath = join(directory, 'test.sqlite');
+  let db = new DatabaseSync(databasePath);
+  t.after(async () => {
+    db.close();
+    await rm(directory, { recursive: true });
+  });
+  db.exec('CREATE TABLE users (id INTEGER PRIMARY KEY) STRICT; INSERT INTO users VALUES (1), (2)');
+  let store = transactionStore(db);
+  const base = { type: 'Despesa', category: 'Moradia', amount: 100, status: 'Pago' };
+  store.create(1, transactionFields({ ...base, date: '2024-02-29', recurrence: 'Anual' }));
+  store.create(1, transactionFields({ ...base, date: '2028-01-31', recurrence: 'Mensal' }));
+  store.create(1, transactionFields({ ...base, date: '2028-01-30', recurrence: 'Semanal' }));
+  assert.deepEqual(store.list(2, '2028-04-29'), []);
+  assert.equal(db.prepare('SELECT count(*) AS count FROM transactions').get().count, 3);
+  const items = store.list(1, '2028-02-29');
+  const dates = (rows, recurrence) => rows.filter(item => item.recurrence === recurrence).map(item => item.date);
+  assert.deepEqual(dates(items, 'Anual'), ['2028-02-29', '2027-02-28', '2026-02-28', '2025-02-28', '2024-02-29']);
+  assert.deepEqual(dates(items, 'Mensal'), ['2028-02-29', '2028-01-31']);
+  assert.deepEqual(dates(items, 'Semanal'), ['2028-02-27', '2028-02-20', '2028-02-13', '2028-02-06', '2028-01-30']);
+  assert.ok(items.every(item => item.status === 'Pago'));
+  const deleted = items.find(item => item.recurrence === 'Mensal' && item.date === '2028-02-29');
+  assert.equal(store.remove(2, deleted.id), false);
+  assert.equal(store.remove(1, deleted.id), true);
+
+  db.close();
+  db = new DatabaseSync(databasePath);
+  store = transactionStore(db);
+  assert.deepEqual(store.list(1, '2028-02-29'), items.filter(item => item.id !== deleted.id));
+  const next = store.list(1, '2028-03-31');
+  assert.deepEqual(dates(next, 'Mensal'), ['2028-03-31', '2028-01-31']);
+  assert.deepEqual(store.list(1, '2028-03-31'), next);
 });
 
 test('a migração mantém lançamentos antigos e aceita os campos opcionais', t => {
