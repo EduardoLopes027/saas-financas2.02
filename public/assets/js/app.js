@@ -416,17 +416,23 @@ function transactionDeleteNotice(text, error = false){
   notice.textContent = text;
 }
 
-async function deleteTransaction(id){
-  if(!entries.some(item=>item.id === id) || deletingTransactionIds.has(id)) return;
+async function deleteTransaction(dialog, button){
+  const id = Number(button.dataset.deleteId);
+  if(!entries.some(item => item.id === id) || deletingTransactionIds.has(id)) return;
   const epoch = accountEpoch;
-  const selector = '.transactions-delete[data-delete-id="' + id + '"]';
-  const button = main.querySelector(selector);
-  const row = button?.closest('tr');
-  const nextId = (row?.nextElementSibling ?? row?.previousElementSibling)
-    ?.querySelector('.transactions-delete')?.dataset.deleteId;
-  const restoreFocus = button === document.activeElement;
+  const row = button.closest('tr');
+  const nextButton = (row.nextElementSibling ?? row.previousElementSibling)?.querySelector('.transactions-delete');
+  const confirmation = dialog.querySelector('[data-delete-confirm]');
+  const confirmationLabel = confirmation.querySelector('span');
+  const cancel = dialog.querySelector('[data-delete-cancel]');
+  const alert = dialog.querySelector('.transactions-delete-error');
   deletingTransactionIds.add(id);
-  if(button) button.disabled = true;
+  confirmation.disabled = true;
+  cancel.disabled = true;
+  dialog.setAttribute('aria-busy','true');
+  confirmationLabel.textContent = 'Excluindo…';
+  alert.textContent = '';
+
   let alreadyUnavailable = false;
   try{
     if(appMode !== 'demo') await apiRequest('/api/transactions/' + id, undefined, 'DELETE');
@@ -434,43 +440,63 @@ async function deleteTransaction(id){
     if(epoch !== accountEpoch) return;
     if(error.status === 401){expireAccount();return;}
     if(error.status !== 404){
-      transactionDeleteNotice('Não foi possível excluir o lançamento. Tente novamente.',true);
-      if(restoreFocus && document.activeElement === document.body){
-        const retry = main.querySelector(selector);
-        if(retry){retry.disabled = false;retry.focus();}
-      }
+      dialog.removeAttribute('aria-busy');
+      alert.textContent = 'Não foi possível excluir o lançamento. Tente novamente.';
+      confirmation.disabled = false;
+      cancel.disabled = false;
+      confirmationLabel.textContent = 'Sim, excluir';
+      confirmation.focus();
       return;
     }
     alreadyUnavailable = true;
   }finally{
     deletingTransactionIds.delete(id);
-    const currentButton = main.querySelector(selector);
-    if(currentButton) currentButton.disabled = false;
   }
   if(epoch !== accountEpoch) return;
   entries = entries.filter(entry => entry.id !== id);
-  if(main.querySelector('.transactions-table')){
-    const moveFocus = restoreFocus && [document.body,button].includes(document.activeElement);
-    updateTransactionPeriod();
-    listResults();
-    if(moveFocus){
-      const target = main.querySelector('.transactions-delete[data-delete-id="' + nextId + '"]:enabled')
-        ?? main.querySelector('.transactions-delete:enabled')
-        ?? main.querySelector('#transactions-query');
-      target?.focus({preventScroll:true});
-    }
-    transactionDeleteNotice(alreadyUnavailable ? 'O lançamento já estava indisponível.' : 'Lançamento excluído.');
+  if(!dialog.isConnected) return;
+
+  dialog.close();
+  const focusTarget = nextButton ?? main.querySelector('#transactions-query');
+  focusTarget?.focus({preventScroll:true});
+  if(!matchMedia('(prefers-reduced-motion: reduce)').matches){
+    await row.animate(
+      [{opacity:1,transform:'translateX(0)'},{opacity:0,transform:'translateX(-8px)'}],
+      {duration:160,easing:'ease-out',fill:'forwards'}
+    ).finished;
   }
+  if(!dialog.isConnected || epoch !== accountEpoch) return;
+  dialog.removeAttribute('aria-busy');
+  const focusedId = document.activeElement?.dataset.deleteId;
+  updateTransactionPeriod();
+  listResults();
+  if(focusedId){
+    const target = main.querySelector('.transactions-delete[data-delete-id="' + focusedId + '"]')
+      ?? main.querySelector('.transactions-delete')
+      ?? main.querySelector('#transactions-query');
+    target?.focus({preventScroll:true});
+  }
+  transactionDeleteNotice(alreadyUnavailable ? 'O lançamento já estava indisponível.' : 'Lançamento excluído.');
 }
 
 function confirmTransactionDeletion(button, dialog){
   const id = Number(button.dataset.deleteId);
-  const item = entries.find(entry=>entry.id === id);
+  const item = entries.find(entry => entry.id === id);
   if(!item || deletingTransactionIds.has(id) || dialog.open) return;
   const date = transactionDate.format(new Date(item.date + 'T00:00:00Z'));
-  dialog.querySelector('p').textContent = '“' + item.description + '” · ' + date;
-  dialog.dataset.deleteId = id;
-  dialog.returnValue = '';
+  const transfer = item.type === 'Transferência';
+  const income = item.type === 'Receita';
+  const amount = dialog.querySelector('[data-delete-amount]');
+  amount.dataset.tone = transfer ? 'transfer' : income ? 'income' : 'expense';
+  amount.textContent = signedMoney(item.amount, transfer ? '' : income ? '+' : '−');
+  dialog.querySelector('#transactions-delete-description').textContent =
+    'Tem certeza que deseja excluir o lançamento “' + item.description + '” de ' + date + '? Essa ação não poderá ser desfeita.';
+  dialog.querySelector('[data-delete-details]').textContent = item.description + ' • ' + date;
+  dialog.querySelector('.transactions-delete-error').textContent = '';
+  const confirmation = dialog.querySelector('[data-delete-confirm]');
+  confirmation.disabled = false;
+  confirmation.querySelector('span').textContent = 'Sim, excluir';
+  dialog.querySelector('[data-delete-cancel]').disabled = false;
   dialog.showModal();
 }
 
@@ -536,14 +562,38 @@ function mountTransactions(){
   });
   main.querySelector('.transactions-export').addEventListener('click',exportTransactions);
   const deleteDialog = main.querySelector('.transactions-delete-dialog');
-  deleteDialog.addEventListener('close',()=>{
-    if(deleteDialog.isConnected && deleteDialog.returnValue === 'delete'){
-      deleteTransaction(Number(deleteDialog.dataset.deleteId));
-    }
+  let deleteTrigger;
+  let backdropPress = false;
+  const dismissDeletion = () => {
+    if(deleteDialog.hasAttribute('aria-busy')) return;
+    deleteDialog.close();
+    deleteTrigger?.focus({preventScroll:true});
+  };
+  deleteDialog.querySelector('[data-delete-cancel]').addEventListener('click',dismissDeletion);
+  deleteDialog.addEventListener('cancel',event => {
+    event.preventDefault();
+    dismissDeletion();
+  });
+  deleteDialog.addEventListener('pointerdown',event => {
+    backdropPress = event.target === deleteDialog;
+  });
+  deleteDialog.addEventListener('click',event => {
+    if(backdropPress && event.target === deleteDialog) dismissDeletion();
+    backdropPress = false;
+  });
+  deleteDialog.querySelector('form').addEventListener('submit',event => {
+    event.preventDefault();
+    if(deleteTrigger && deleteDialog.open) deleteTransaction(deleteDialog,deleteTrigger);
   });
   main.querySelector('.transactions-table tbody').addEventListener('click', event => {
     const button = event.target.closest('button[data-delete-id]');
-    if(button){confirmTransactionDeletion(button,deleteDialog);return;}
+    if(button){
+      if(!deleteDialog.open && !deleteDialog.hasAttribute('aria-busy')){
+        deleteTrigger = button;
+        confirmTransactionDeletion(button,deleteDialog);
+      }
+      return;
+    }
     const receipt = event.target.closest('[data-receipt-id]');
     if(receipt) downloadDemoReceipt(Number(receipt.dataset.receiptId));
   });

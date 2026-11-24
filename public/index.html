@@ -144,11 +144,22 @@
     </section>
     <dialog class="transactions-delete-dialog" aria-labelledby="transactions-delete-title" aria-describedby="transactions-delete-description">
       <form method="dialog">
+        <div class="transactions-delete-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V4h6v3m3 0-1 13H7L6 7m4 4v6m4-6v6"/></svg>
+        </div>
         <h2 id="transactions-delete-title">Excluir lançamento?</h2>
         <p id="transactions-delete-description"></p>
+        <div class="transactions-delete-summary">
+          <span data-delete-details></span>
+          <strong data-delete-amount></strong>
+        </div>
+        <p class="transactions-delete-error" role="alert"></p>
         <div class="transactions-delete-dialog-actions">
-          <button value="cancel" autofocus>Cancelar</button>
-          <button value="delete">Excluir lançamento</button>
+          <button type="button" data-delete-cancel autofocus>Cancelar</button>
+          <button type="submit" data-delete-confirm>
+            <svg aria-hidden="true" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V4h6v3m3 0-1 13H7L6 7m4 4v6m4-6v6"/></svg>
+            <span>Sim, excluir</span>
+          </button>
         </div>
       </form>
     </dialog>
