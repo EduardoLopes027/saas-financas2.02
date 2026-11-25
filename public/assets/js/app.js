@@ -191,7 +191,11 @@ function localCalendarDate(now = new Date()){
 
 function mountHome(showDashboard){
   const home = stitchTemplate('home');
-  if(accountUser) home.querySelector('h1').textContent='Visão da conta';
+  if(accountUser){
+    const name = [accountUser.full_name, accountUser.name].find(value => typeof value === 'string' && value.trim());
+    const firstName = name?.trim().split(/\s+/, 1)[0];
+    home.querySelector('h1').textContent = firstName ? 'Olá, ' + firstName : 'Olá';
+  }
   const monthText = formatMonth(homeMonth);
   const monthSelect = home.querySelector('#home-month');
   monthSelect.innerHTML = monthOptions(homeMonth,{baseMonths:monthsOfYear((accountUser ? localCalendarDate() : demoDate).slice(0,4))});
