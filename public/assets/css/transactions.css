@@ -125,18 +125,6 @@
   cursor: default;
 }
 
-@media (max-width: 670px) {
-  .stitch-greeting .home-month-picker {
-    grid-row: 2;
-    grid-column: 1 / -1;
-    justify-self: start;
-  }
-
-  body.home-view .stitch-greeting [data-stitch="intro"] {
-    display: block;
-  }
-}
-
 .transactions-export {
   padding-inline: 16px;
 }

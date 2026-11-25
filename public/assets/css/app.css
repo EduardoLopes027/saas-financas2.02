@@ -293,5 +293,24 @@ input,select,button,.nav{border-color:#85829c;color:var(--home-ink)}
   }
 }
 
-.stitch-balance :has(> .future-balance-badge) { flex-wrap: wrap; }
-.stitch-balance [data-stitch="balance-badge"].future-balance-badge { position: static; }
+.stitch-greeting > .stitch-add {
+  flex-shrink: 0;
+  align-self: flex-end;
+}
+
+@media (min-width: 1024px) {
+  .stitch-greeting > .stitch-add {
+    align-self: center;
+  }
+}
+
+@media (max-width: 670px) {
+  .stitch-greeting > .stitch-add {
+    align-self: center;
+    justify-self: end;
+  }
+
+  body.home-view .stitch-greeting [data-stitch="intro"] {
+    display: block;
+  }
+}
