@@ -1,6 +1,7 @@
 'use strict';
 
 const { createHandler, json } = require('../backend/auth.cjs');
+const { googleClient } = require('../backend/google-oauth.cjs');
 
 const reasons = new Map(Object.entries({
   APP_ORIGIN_MISSING: 'APP_ORIGIN is missing',
@@ -74,7 +75,14 @@ async function initialize() {
     const origin = configuredOrigin(process.env.APP_ORIGIN);
     stage = 'PostgreSQL connection and schema check';
     await store.check();
-    return createHandler(store, { secure: true, postgres: true, expectedOrigin: origin });
+    let google;
+    try {
+      google = googleClient(process.env.SUPABASE_URL,
+        process.env.SUPABASE_PUBLISHABLE_KEY || process.env.SUPABASE_ANON_KEY, origin);
+    } catch {
+      console.error('[finflow/api] Invalid Supabase Auth configuration');
+    }
+    return createHandler(store, { secure: true, postgres: true, expectedOrigin: origin, google });
   } catch (error) {
     reportInitializationError(stage, error);
     await store?.close().catch(() => {});

@@ -31,6 +31,21 @@ A API também aceita o certificado em uma única linha ou com quebras escapadas.
 
 O deploy serve `public/` e encaminha as rotas `/api/*` para a função Node.js. A autenticação usa senhas com hash scrypt e sessões revogáveis em cookie seguro. A função usa o PostgreSQL configurado em `DATABASE_URL`.
 
+## Login com Google
+
+1. Para uma instalação existente, execute a [migração do Google OAuth](../supabase/migrations/20261125000000_google_oauth.sql) no SQL Editor antes do deploy. Ela acrescenta as tabelas de identidade e de autorização temporária, amplia os dias de salário permitidos e concede ao papel de execução as permissões necessárias.
+2. Ative Google em **Authentication → Sign In / Providers** no Supabase. Em **Authentication → URL Configuration**, mantenha o domínio canônico como **Site URL** e permita o retorno exato `https://<DOMÍNIO_CANÔNICO_DO_FINFLOW>/api/auth/google/callback`.
+3. No ambiente **Production** do Vercel, configure também:
+
+   ```dotenv
+   SUPABASE_URL=https://<PROJECT_REF>.supabase.co
+   SUPABASE_ANON_KEY=<CHAVE_ANÔNIMA_DO_PROJETO>
+   ```
+
+   Com a chave publicável do Supabase, use `SUPABASE_PUBLISHABLE_KEY` no lugar de `SUPABASE_ANON_KEY`.
+
+Uma conta criada pelo Google tem como previsão inicial o quinto dia de segunda a sexta do mês. Para vincular uma conta já cadastrada, entre primeiro com a senha e selecione **Vincular conta Google** em **Configurações**. O vínculo conserva os lançamentos e permite futuros acessos pelo Google.
+
 ## Conferência
 
 - Abra o domínio canônico e confira se a tela de login carrega. Uma chamada a `GET /api/auth/session` sem sessão deve retornar `401`.
@@ -38,3 +53,4 @@ O deploy serve `public/` e encaminha as rotas `/api/*` para a função Node.js. 
 - Cadastre duas contas de teste. Em uma delas, crie uma receita no mês anterior e uma despesa no mês corrente. Confira o saldo acumulado na Home e os totais do mês em Lançamentos.
 - Edite e exclua a despesa. Recarregue e confira a persistência e os saldos. Entre na outra conta e confirme que os dados da primeira estão isolados.
 - Confira o encerramento de sessão e o acesso à conta após novo login.
+- Em uma conta de teste, confira o retorno do Google ao painel e o acesso aos lançamentos com a sessão do FinFlow. Repita com uma conta existente usando a opção de vínculo em Configurações.

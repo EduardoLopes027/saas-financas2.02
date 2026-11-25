@@ -1,3 +1,12 @@
+/* Google Sans Medium subset for the Portuguese button. License: ../fonts/GoogleSans-OFL.txt. */
+@font-face {
+  font-family: 'Google Sans Button';
+  font-style: normal;
+  font-weight: 500;
+  src: url(data:font/woff2;base64,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) format('woff2');
+  unicode-range: U+20, U+43, U+47, U+61, U+63, U+65, U+67, U+69, U+6c-6f, U+72, U+74-75;
+}
+
 @font-face {
   font-family: "FinFlow Auth Symbols";
   src: url("../fonts/AuthSymbols.woff2") format("woff2");
@@ -77,8 +86,24 @@ body.account-gated { background: #f8f9ff; }
 .auth-content .auth-remember { display: flex; align-items: center; gap: 8px; font: 400 13px "Hanken Grotesk",sans-serif; margin: 0; cursor: pointer; }
 .auth-remember input { width: 16px; height: 16px; min-height: 0; margin: 0; accent-color: #2a14b4; }
 .auth-content button.auth-google,.auth-content button.auth-submit { display: flex; justify-content: center; align-items: center; gap: 9px; width: 100%; border-radius: 999px; font: 600 15px/1.5 "Plus Jakarta Sans",sans-serif; }
-.auth-content button.auth-google { background: white; border: 1px solid #d7d5e0; padding: 12px; color: #464554; cursor: default; }
-.auth-google small { font: 400 12px "Hanken Grotesk",sans-serif; }
+.auth-content button.auth-google {
+  min-height: 44px;
+  padding: 9px 12px;
+  gap: 10px;
+  background: #fff;
+  border: 1px solid #747775;
+  color: #1f1f1f;
+  font: 500 14px/20px "Google Sans Button", Arial, sans-serif;
+  cursor: pointer;
+}
+.auth-google svg { flex: 0 0 auto; }
+.auth-content button.auth-google:hover:not(:disabled) { box-shadow: 0 1px 3px #1f1f1f25; }
+.auth-content button.auth-google:disabled { opacity: .7; cursor: default; }
+.auth-google:focus-visible,#account-google-link:focus-visible { outline: 2px solid #2a14b4; outline-offset: 2px; }
+.auth-content #auth-google-unavailable { margin: 6px 0 0; color: #464554; font-size: 13px; }
+#account-google-status:empty,#account-google-link[hidden] { display: none; }
+#account-google-status { margin: 6px 0; overflow-wrap: anywhere; }
+#account-google-link { margin-bottom: 6px; }
 .auth-divider { display: flex; align-items: center; gap: 8px; color: #777586; font-size: 13px; margin: 8px 0 14px; }
 .auth-divider::before,.auth-divider::after { content: ""; flex: 1; height: 1px; background: #dedde6; }
 .auth-content button.auth-submit { padding: 14px 20px; color: white; background: #2a14b4; border: 0; box-shadow: 0 4px 12px #2a14b425; }

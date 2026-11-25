@@ -46,6 +46,16 @@ let saveBusy = false;
 let sessionProblem = false;
 let logoutProblem = false;
 let authNotice = '';
+const authLocation = new URL(location.href);
+const googleError = authLocation.searchParams.get('auth_error');
+const googleFailure = 'Não foi possível continuar com o Google. Tente novamente ou entre com seu e-mail.';
+let googleNotice = googleError === 'google_link_required'
+  ? 'Já existe uma conta com esse e-mail. Entre com sua senha e escolha Vincular conta Google em Configurações.'
+  : googleError === 'google_failed' ? googleFailure : '';
+if(googleError && googleNotice){
+  authLocation.searchParams.delete('auth_error');
+  history.replaceState(history.state,'',authLocation);
+}
 let message = '';
 let draft = null;
 let suspendedDraft = null;
@@ -133,12 +143,24 @@ function homeSpending(expenses, category, days){
   return chart;
 }
 
-function salaryForecast(items, reference){
+function fifthWeekday(year, month){
+  const date = new Date(Date.UTC(year,month,1));
+  for(let weekdays=0;;date.setUTCDate(date.getUTCDate()+1)){
+    const weekday = date.getUTCDay();
+    if(weekday >= 1 && weekday <= 5 && ++weekdays === 5) return date.toISOString().slice(0,10);
+  }
+}
+
+function salaryForecast(items, reference, salaryDay){
   const salaries = items.filter(item => item.type === 'Receita' && item.category === 'Salário');
   const dates = salaries.map(item => item.date).sort();
   let date = dates.find(value => value >= reference);
   const estimated = !date;
-  if(estimated){
+  if(estimated && salaryDay === '5-business'){
+    const [year, month] = reference.split('-').map(Number);
+    date = fifthWeekday(year,month-1);
+    if(date < reference) date = fifthWeekday(year,month);
+  }else if(estimated){
     const last = dates.at(-1);
     if(!last) return null;
     const [year, month, day] = last.split('-').map(Number);
@@ -191,7 +213,7 @@ function mountHome(showDashboard){
   const balance = income - spentThroughToday;
   const [year, monthNumber] = homeMonth.split('-').map(Number);
   const days = new Date(Date.UTC(year, monthNumber, 0)).getUTCDate();
-  const salary = salaryForecast(items,today);
+  const salary = salaryForecast(items,today,accountUser?.salaryDay);
   const salaryDate = salary ? salaryDateLabel.format(new Date(salary.date)) : '';
   const salaryPeriod = salary ? (salary.days === 0 ? 'Hoje' : salary.days === 1 ? 'Falta 1 dia' : 'Faltam ' + salary.days + ' dias') + ' · ' + salaryDate : 'Sem data de salário';
   const recent = newest(month).slice(0,5);
@@ -608,6 +630,8 @@ function mountTransactions(){
 }
 
 const accountTools = document.querySelector('.account-tools');
+const googleLink = document.querySelector('#account-google-link');
+const googleLinkStatus = document.querySelector('#account-google-status');
 const accountChannel = appMode === 'checking' && typeof BroadcastChannel === 'function'
   ? new BroadcastChannel('finflow-account-local') : null;
 
@@ -622,6 +646,34 @@ async function apiRequest(path, body, method){
   const response = await fetch(path,request);
   if(!response.ok) throw Object.assign(new Error('API request failed'),{status:response.status});
   return response.status === 204 ? null : response.json();
+}
+
+async function linkGoogleAccount(){
+  if(!accountUser || googleLink.disabled) return;
+  const userId=accountUser.id;
+  googleLink.disabled=true;
+  googleLinkStatus.textContent='Abrindo o Google…';
+  try{
+    const result=await apiRequest('/api/auth/google/link',{});
+    if(accountUser?.id!==userId){
+      googleLink.disabled=false;
+      return;
+    }
+    const destination=new URL(result.url);
+    if(destination.protocol!=='https:' || destination.username || destination.password
+      || destination.pathname!=='/auth/v1/authorize' || destination.searchParams.get('provider')!=='google'
+      || destination.searchParams.get('redirect_to')!==location.origin+'/api/auth/google/callback'){
+      throw new Error('Invalid Google authorization URL');
+    }
+    location.assign(destination.href);
+  }catch(error){
+    googleLink.disabled=false;
+    if(accountUser?.id!==userId) return;
+    if(error.status===401){expireAccount();return;}
+    googleLinkStatus.textContent=error.status===503 || error.status===404
+      ? 'Vinculação com o Google indisponível no momento.'
+      : 'Não foi possível vincular a conta Google. Tente novamente.';
+  }
 }
 
 function requireAccountUser(payload){
@@ -705,6 +757,12 @@ async function restoreAccount(){
     if(epoch!==accountEpoch) return;
     appMode='account';
     accountUser=user;
+    if(googleNotice){
+      googleLinkStatus.textContent='Não foi possível vincular a conta Google. Tente novamente.';
+      accountTools.closest('details').open=true;
+      googleNotice='';
+      if(location.hash==='#login') history.replaceState(history.state,'','#painel');
+    }
     draft=resumeEntryDraft(user);
     if(user.id===previousUser?.id){
       draft=previousDraft ?? draft;
@@ -754,6 +812,7 @@ function updateAccountChrome(authPreview){
   document.body.classList.toggle('account-gated',authPreview||(appMode!=='demo'&&!accountUser));
   accountTools.hidden=!accountUser;
   accountTools.querySelector('.account-email').textContent=accountUser?.email ?? '';
+  if(!accountUser && !authBusy) googleLinkStatus.textContent='';
 }
 
 function renderAccountGate(focus,authPreview){
@@ -793,7 +852,16 @@ function renderAccountGate(focus,authPreview){
       eye.setAttribute('aria-label',visible?'Ocultar senha':'Mostrar senha');
       eye.querySelector('i').textContent=visible?'visibility_off':'visibility';
     });
-    main.querySelector('#auth-status').textContent=authNotice;
+    const googleButton=main.querySelector('.auth-google');
+    googleButton.disabled=authPreview;
+    main.querySelector('#auth-google-unavailable').hidden=!authPreview;
+    if(!authPreview){
+      googleButton.removeAttribute('aria-describedby');
+      googleButton.addEventListener('click',()=>{
+        if(!authBusy) location.assign('/api/auth/google');
+      });
+    }
+    main.querySelector('#auth-status').textContent=authNotice || googleNotice;
     if(authPreview) main.querySelector('.auth-assurance').textContent='Acesso à conta indisponível nesta prévia.';
     main.querySelector('.auth-submit').disabled=authPreview;
     main.querySelector('form').addEventListener('submit',event=>{
@@ -828,6 +896,10 @@ async function submitAccount(event, register){
     forgetAccount();
     accountUser=user;
     authNotice='';
+    if(googleError==='google_link_required' && googleNotice){
+      accountTools.closest('details').open=true;
+    }
+    googleNotice='';
     authBusy=false;
     accountChannel?.postMessage('account-changed');
     draft=resumeEntryDraft(user);
@@ -967,6 +1039,12 @@ window.addEventListener('hashchange',()=>{
   }
 });
 document.querySelector('#account-logout').addEventListener('click',logout);
+googleLink.addEventListener('click',linkGoogleAccount);
+window.addEventListener('pageshow',event=>{
+  if(!event.persisted) return;
+  googleLink.disabled=false;
+  googleLinkStatus.textContent='';
+});
 accountChannel?.addEventListener('message',event=>{
   if(event.data==='account-changed'&&appMode==='account'&&!authBusy) restoreAccount();
 });

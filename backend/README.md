@@ -87,3 +87,13 @@ No PostgreSQL, o maior valor por lançamento é `999999999999` centavos, corresp
 `npm test` executa os testes locais. Para incluir o teste PostgreSQL descartável, instale `@electric-sql/pglite` e `@electric-sql/pglite-socket` em um diretório temporário e aponte `FINFLOW_PGLITE_DIR` para esse diretório antes do comando. O teste utiliza um PostgreSQL em memória com conexão TCP local. O banco local SQLite existente permanece onde está.
 
 As senhas usam scrypt com salt aleatório por conta. O banco guarda o hash do identificador de sessão e a validade. O servidor HTTP local se limita ao loopback e só aceita o host configurado. Requisições POST de navegador ficam restritas à mesma origem.
+
+## Entrar com Google
+
+O OAuth fica disponível na API HTTPS com PostgreSQL. Configure `SUPABASE_URL` e `SUPABASE_PUBLISHABLE_KEY` (ou `SUPABASE_ANON_KEY`) na função. Use uma chave pública do projeto. Cadastre `APP_ORIGIN` seguido de `/api/auth/google/callback` na lista de redirecionamentos autorizados do Supabase Auth e configure o provedor Google no Supabase. Reaplique `supabase/schema.sql` no banco para criar as tabelas de vínculo e de tentativas, ajustar a restrição de dia de salário e conceder os privilégios ao papel de execução. [Fluxo PKCE do Supabase](https://supabase.com/docs/guides/auth/sessions/pkce-flow)
+
+- `GET /api/auth/google` inicia o login.
+- `POST /api/auth/google/link` recebe `{}` com sessão ativa e origem HTTPS configurada. Retorna `200 {"url":"..."}` para navegação. Sem configuração, retorna `503 {"error":"google_unavailable"}`.
+- `GET /api/auth/google/callback` consome a tentativa e redireciona para `/#painel` ou `/?auth_error=google_failed#login`. Se o e-mail já pertence a uma conta sem vínculo, o login retorna `/?auth_error=google_link_required#login`. O titular entra com a senha e inicia o vínculo autenticado.
+
+O vínculo usa o identificador permanente do Google. Uma conta criada via OAuth recebe o nome do Google e `salaryDay: "5-business"`, com login por senha desativado. O cookie da tentativa expira em cinco minutos. O teste PostgreSQL usa uma resposta simulada do Supabase e executa as operações com `SET ROLE finflow_runtime`.

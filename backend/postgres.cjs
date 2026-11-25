@@ -158,6 +158,50 @@ function createStore(sql) {
     async deleteSession(hash) {
       await sql.unsafe(`DELETE FROM ${schema}.sessions WHERE token_hash = $1`, [hash]);
     },
+    async startGoogleFlow(hash, expires, session, now) {
+      return sql.begin(async query => {
+        await query.unsafe(`DELETE FROM ${schema}.google_oauth_flows WHERE expires_at <= $1`, [now]);
+        await query.unsafe(`INSERT INTO ${schema}.google_oauth_flows (verifier_hash, expires_at, session_hash)
+          VALUES ($1,$2,$3)`, [hash, expires, session]);
+      });
+    },
+    async consumeGoogleFlow(hash, now) {
+      const [flow] = await sql.unsafe(`DELETE FROM ${schema}.google_oauth_flows
+        WHERE verifier_hash=$1 AND expires_at>$2 RETURNING session_hash`, [hash, now]);
+      return flow;
+    },
+    async signInWithGoogle(identity, flowSession, previous, { hash, now, expires, salt, unusableHash }) {
+      return sql.begin(async query => {
+        await query.unsafe('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', ['finflow-google:' + identity.subject]);
+        const [linked] = await query.unsafe(`SELECT user_id FROM ${schema}.google_identities WHERE subject=$1`, [identity.subject]);
+        let userId = linked?.user_id;
+        if (flowSession) {
+          // Consume the original live session as part of the same transaction as the link.
+          // The browser's Strict session cookie can be absent on the OAuth redirect.
+          const [owner] = await query.unsafe(`DELETE FROM ${schema}.sessions s USING ${schema}.users u
+            WHERE s.token_hash=$1 AND s.expires_at>$2 AND s.user_id=u.id AND u.email=$3
+              AND ($4::integer IS NULL OR s.user_id=$4)
+              AND NOT EXISTS (SELECT 1 FROM ${schema}.google_identities g WHERE g.user_id=s.user_id AND g.subject<>$5)
+            RETURNING s.user_id`, [flowSession, now, identity.email, userId ?? null, identity.subject]);
+          if (!owner) return 'google_failed';
+          userId = owner.user_id;
+        } else if (!userId) {
+          const [created] = await query.unsafe(`INSERT INTO ${schema}.users (email,password_salt,password_hash,name,salary_day,password_enabled)
+            VALUES ($1,$2,$3,$4,'5-business',false) ON CONFLICT (email) DO NOTHING RETURNING id`,
+          [identity.email, salt, unusableHash, identity.name]);
+          if (!created) return 'google_link_required';
+          userId = created.id;
+        }
+        if (!linked) {
+          await query.unsafe(`INSERT INTO ${schema}.google_identities (subject,user_id) VALUES ($1,$2)`,
+            [identity.subject, userId]);
+        }
+        await query.unsafe(`DELETE FROM ${schema}.sessions WHERE token_hash=$1 OR expires_at<=$2`, [previous, now]);
+        await query.unsafe(`INSERT INTO ${schema}.sessions (token_hash,user_id,expires_at) VALUES ($1,$2,$3)`,
+          [hash, userId, expires]);
+        return undefined;
+      });
+    },
     async rotateSession(hash, userId, expires, previous, now) {
       await sql.begin(async query => {
         await query.unsafe(`DELETE FROM ${schema}.sessions WHERE expires_at <= $1 OR token_hash = $2`, [now, previous]);

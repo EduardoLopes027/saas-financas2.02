@@ -6,6 +6,7 @@ const { createServer } = require('node:http');
 const { dirname, join } = require('node:path');
 const { promisify } = require('node:util');
 const { transactionFields, transactionStore, MAX_TRANSACTION_BODY } = require('./transactions.cjs');
+const { callbackPath, challenge, failure, flowCookie, newFlow, readFlow, redirect } = require('./google-oauth.cjs');
 
 const deriveKey = promisify(scrypt);
 const COOKIE = 'finflow_session';
@@ -53,6 +54,19 @@ function json(response, status, body) {
 }
 
 async function readJson(request, limit = 4096) {
+  // The Vercel Node helpers may consume the stream and expose the parsed JSON.
+  if (request.readableEnded && Object.hasOwn(request, 'body')) {
+    if (Number(request.headers['content-length']) > limit) throw new HttpError(413, 'body_too_large');
+    let body;
+    try {
+      body = request.body;
+      if (body === undefined) throw new Error();
+    } catch {
+      throw new HttpError(400, 'invalid_json');
+    }
+    if (Buffer.byteLength(JSON.stringify(body)) > limit) throw new HttpError(413, 'body_too_large');
+    return body;
+  }
   const chunks = [];
   let size = 0;
   for await (const chunk of request.iterator({ destroyOnReturn: false })) {
@@ -189,7 +203,7 @@ async function sqliteStore(databasePath) {
   };
 }
 
-function createHandler(store, { secure = false, postgres = false, expectedOrigin } = {}) {
+function createHandler(store, { secure = false, postgres = false, expectedOrigin, google } = {}) {
   const { transactions } = store;
   const maxAmount = postgres ? POSTGRES_MAX_AMOUNT : Number.MAX_SAFE_INTEGER;
   const maxBody = secure ? HOSTED_MAX_BODY : MAX_TRANSACTION_BODY;
@@ -222,7 +236,8 @@ function createHandler(store, { secure = false, postgres = false, expectedOrigin
       throw new HttpError(429, 'too_many_attempts');
     }
 
-    const user = isRegister ? null : await store.getUser(email);
+    const found = isRegister ? null : await store.getUser(email);
+    const user = found?.password_enabled === false ? null : found;
     const salt = isRegister ? randomBytes(16) : user?.password_salt ?? DUMMY_SALT;
     let hash;
     if (activeHashes >= 4) throw new HttpError(429, 'too_many_attempts');
@@ -249,10 +264,65 @@ function createHandler(store, { secure = false, postgres = false, expectedOrigin
     return json(response, 200, { user: account(user.id, email, user.name, user.salary_day) });
   }
 
+  async function startGoogle(request, response, link) {
+    if (!secure || !google) {
+      if (link) throw new HttpError(503, 'google_unavailable');
+      return redirect(response, failure);
+    }
+    if (link) {
+      await readJson(request);
+      await requireSession(request);
+    } else if (!['same-origin', 'none', undefined].includes(request.headers['sec-fetch-site'])) {
+      return redirect(response, failure);
+    }
+    const now = Date.now();
+    const ip = request.headers['x-vercel-forwarded-for'];
+    const network = typeof ip === 'string' ? ip : 'unknown';
+    if (!await store.recordAttempt(Math.floor(now / WINDOW_MS), [['google-network:' + tokenHash(network), 48]])) {
+      if (link) throw new HttpError(429, 'too_many_attempts');
+      return redirect(response, failure);
+    }
+    const flow = newFlow();
+    await store.startGoogleFlow(flow.hash, flow.expires, link ? sessionHash(request) : null, now);
+    const url = google.authorize(flow.verifier);
+    if (!link) return redirect(response, url, [flowCookie(flow.verifier)]);
+    response.setHeader('Set-Cookie', flowCookie(flow.verifier));
+    return json(response, 200, { url });
+  }
+
+  async function completeGoogle(request, response, params) {
+    const cookies = [flowCookie('', 0)];
+    try {
+      const verifier = readFlow(request);
+      if (!secure || !google || !verifier) return redirect(response, failure, cookies);
+      const flow = await store.consumeGoogleFlow(challenge(verifier), Date.now());
+      const previous = sessionHash(request);
+      const [code, ...duplicates] = params.getAll('code');
+      if (!flow || !code || code.length > 512 || duplicates.length || params.has('error')
+          || (flow.session_hash && previous && flow.session_hash !== previous)) {
+        return redirect(response, failure, cookies);
+      }
+      const identity = await google.identity(code, verifier);
+      if (!identity) return redirect(response, failure, cookies);
+      const token = randomBytes(32).toString('base64url');
+      const now = Date.now();
+      const error = await store.signInWithGoogle(identity, flow.session_hash, previous, {
+        hash: tokenHash(token), now, expires: now + SESSION_SECONDS * 1000,
+        salt: randomBytes(16), unusableHash: randomBytes(64),
+      });
+      if (error) return redirect(response, '/?auth_error=' + error + '#login', cookies);
+      return redirect(response, '/#painel', [...cookies, ...cookieHeaders(token, SESSION_SECONDS, true)]);
+    } catch {
+      console.error('Falha ao concluir autenticação Google');
+      return redirect(response, failure, cookies);
+    }
+  }
+
   return async (request, response) => {
     try {
       const [originalPath, search = ''] = request.url.split('?', 2);
-      const target = new URLSearchParams(search).get('__route');
+      const params = new URLSearchParams(search);
+      const target = params.get('__route');
       const pathname = secure && originalPath === '/api/index' && target
         ? '/api/' + target.replace(/^\/+/, '') : originalPath;
       const origin = expectedOrigin ?? 'http://127.0.0.1:' + request.socket.localPort;
@@ -307,6 +377,17 @@ function createHandler(store, { secure = false, postgres = false, expectedOrigin
       }
 
       switch (route) {
+        case 'GET /api/auth/google':
+          try {
+            return await startGoogle(request, response, false);
+          } catch {
+            console.error('Falha ao iniciar autenticação Google');
+            return redirect(response, failure);
+          }
+        case 'POST /api/auth/google/link':
+          return await startGoogle(request, response, true);
+        case 'GET ' + callbackPath:
+          return await completeGoogle(request, response, params);
         case 'POST /api/auth/register':
           return await authenticate(request, response, true);
         case 'POST /api/auth/login':

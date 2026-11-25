@@ -9,6 +9,7 @@ const { X509Certificate } = require('node:crypto');
 const { rootCertificates } = require('node:tls');
 const test = require('node:test');
 const { createHandler } = require('./auth.cjs');
+const { googleClient, challenge } = require('./google-oauth.cjs');
 
 const dependencyRoot = process.env.FINFLOW_PGLITE_DIR;
 const origin = 'https://finflow.example.test';
@@ -61,7 +62,7 @@ test('Configura o pooler com TLS verificado e reconstrói certificados PEM', () 
   assert.throws(() => connectionOptions(url.replace('%40', '%ZZ')), { code: 'DATABASE_URL_INVALID' });
 });
 
-test('PostgreSQL descartável: esquema, autenticação, edição, anexos e recorrência', {
+test('PostgreSQL descartável com papel restrito: autenticação, Google OAuth, lançamentos e recorrência', {
   skip: !dependencyRoot && 'Defina FINFLOW_PGLITE_DIR para executar o teste com PostgreSQL em memória',
 }, async t => {
   const { default: postgres } = require('postgres');
@@ -96,25 +97,53 @@ test('PostgreSQL descartável: esquema, autenticação, edição, anexos e recor
     max: 1, prepare: false, fetch_types: false, connect_timeout: 5,
   });
   store = createStore(sql);
-  server = createServer(createHandler(store, { secure: true, postgres: true, expectedOrigin: origin }));
+  await sql.unsafe('SET ROLE finflow_runtime');
+  assert.equal((await sql.unsafe('SELECT current_user AS role'))[0].role, 'finflow_runtime');
+  const codes = new Map();
+  const tokens = new Map();
+  const google = googleClient('https://supabase.example.test', 'publishable-test', origin, async (url, options) => {
+    assert.equal(options.headers.apikey, 'publishable-test');
+    if (url.endsWith('/token?grant_type=pkce')) {
+      const { auth_code: code, code_verifier: verifier } = JSON.parse(options.body);
+      const flow = codes.get(code);
+      if (!flow || flow.challenge !== challenge(verifier)) return new Response(null, { status: 400 });
+      codes.delete(code);
+      tokens.set(code, flow.profile);
+      return Response.json({ access_token: code });
+    }
+    assert.equal(url, 'https://supabase.example.test/auth/v1/user');
+    const profile = tokens.get(options.headers.Authorization.slice('Bearer '.length));
+    return Response.json({ identities: [{ provider: 'google', identity_data: profile }] });
+  });
+  const handler = createHandler(store, { secure: true, postgres: true, expectedOrigin: origin, google });
+  server = createServer(async (request, response) => {
+    if (request.headers['x-test-vercel-helper']) {
+      const chunks = [];
+      for await (const chunk of request) chunks.push(chunk);
+      Object.defineProperty(request, 'body', { get: () => JSON.parse(Buffer.concat(chunks).toString()) });
+    }
+    return handler(request, response);
+  });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   const root = 'http://127.0.0.1:' + server.address().port;
-  const api = (path, { method = 'GET', cookie, body, browserOrigin = origin } = {}) =>
-    fetch(root + '/api/index?__route=' + encodeURIComponent(path), {
+  const api = (path, { method = 'GET', cookie, body, browserOrigin = origin, parsed = false, code } = {}) =>
+    fetch(root + '/api/index?' + new URLSearchParams({ __route: path, ...(code && { code }) }), {
       method,
       headers: {
         ...(browserOrigin && { Origin: browserOrigin }),
         ...(cookie && { Cookie: cookie }),
         ...(body && { 'Content-Type': 'application/json' }),
+        ...(parsed && { 'X-Test-Vercel-Helper': '1' }),
       },
+      redirect: 'manual',
       body: body && JSON.stringify(body),
     });
   async function account(email) {
     const body = { email, password: 'senha fictícia e longa' };
-    const register = () => api('auth/register', { method: 'POST', body });
+    const register = () => api('auth/register', { method: 'POST', body, parsed: true });
     assert.equal((await register()).status, 201);
     assert.equal((await register()).status, 409);
-    const login = await api('auth/login', { method: 'POST', body });
+    const login = await api('auth/login', { method: 'POST', body, parsed: true });
     assert.equal(login.status, 200);
     assert.match(login.headers.getSetCookie()[0], /HttpOnly; SameSite=Strict; Secure/);
     return login.headers.getSetCookie()[0].split(';')[0];
@@ -170,4 +199,69 @@ test('PostgreSQL descartável: esquema, autenticação, edição, anexos e recor
   assert.equal((await api('auth/logout', { method: 'POST', cookie: a, body: {} })).status, 204);
   assert.equal((await api('auth/session', { cookie: a })).status, 401);
   assert.equal((await api('auth/session', { cookie: b })).status, 200);
+
+  const beginLink = (cookie, browserOrigin = origin) =>
+    api('auth/google/link', { method: 'POST', body: {}, cookie, browserOrigin });
+  const finish = (cookie, code) => api('auth/google/callback', { cookie, code });
+  const session = cookie => api('auth/session', { cookie });
+  const oauthCookie = response => response.headers.getSetCookie()[0].split(';')[0];
+  const newSession = response => response.headers.getSetCookie()[1].split(';')[0];
+
+  async function authorize(profile, cookie) {
+    const response = cookie ? await beginLink(cookie) : await api('auth/google');
+    assert.equal(response.status, cookie ? 200 : 303);
+    assert.match(response.headers.getSetCookie()[0], /Path=\/; Secure; HttpOnly; SameSite=Lax; Max-Age=300/);
+    const url = new URL(cookie ? (await response.json()).url : response.headers.get('location'));
+    assert.equal(url.origin, 'https://supabase.example.test');
+    assert.equal(url.pathname, '/auth/v1/authorize');
+    assert.equal(url.searchParams.get('provider'), 'google');
+    assert.equal(url.searchParams.get('redirect_to'), origin + '/api/auth/google/callback');
+    assert.equal(url.searchParams.get('code_challenge_method'), 's256');
+    const code = 'fictitious-code-' + (codes.size + tokens.size);
+    codes.set(code, { profile, challenge: url.searchParams.get('code_challenge') });
+    return [oauthCookie(response), code];
+  }
+
+  const profile = { sub: 'google-1', email: 'nova@example.test', email_verified: true, name: 'Conta ficticia' };
+  const failed = '/?auth_error=google_failed#login';
+  assert.equal((await finish(undefined, 'missing')).headers.get('location'), failed);
+  const unrelated = await authorize(profile);
+  const original = await authorize(profile);
+  assert.equal((await finish(unrelated[0], original[1])).headers.get('location'), failed);
+  assert.equal((await finish(...await authorize({ ...profile, email_verified: false }))).headers.get('location'), failed);
+  const firstFlow = await authorize(profile);
+  const signedIn = await finish(...firstFlow);
+  assert.equal(signedIn.headers.get('location'), '/#painel');
+  assert.match(signedIn.headers.getSetCookie()[0], /Max-Age=0/);
+  const googleUser = (await (await session(newSession(signedIn))).json()).user;
+  assert.deepEqual(googleUser, { id: googleUser.id, email: profile.email, name: profile.name, salaryDay: '5-business' });
+  assert.equal((await finish(...firstFlow)).headers.get('location'), failed);
+  const password = { email: profile.email, password: 'senha ficticia sem acesso' };
+  assert.equal((await api('auth/login', { method: 'POST', body: password })).status, 401);
+  const repeat = await finish(...await authorize({ ...profile, email: 'mudou@example.test' }));
+  assert.equal((await (await session(newSession(repeat))).json()).user.id, googleUser.id);
+
+  const existing = { ...profile, sub: 'google-2', email: 'segunda@example.test' };
+  const collision = await finish(...await authorize(existing));
+  assert.equal(collision.headers.get('location'), '/?auth_error=google_link_required#login');
+  assert.equal((await beginLink(undefined)).status, 401);
+  assert.equal((await beginLink(b, null)).status, 403);
+  assert.equal((await beginLink(b, 'https://elsewhere.example.test')).status, 403);
+  assert.equal((await finish(...await authorize({ ...existing, email: 'outro@example.test' }, b))).headers.get('location'), failed);
+  const before = (await (await session(b)).json()).user;
+  const entry = await create({ description: 'Lançamento anterior ao vínculo' }, b);
+  assert.equal(entry.status, 201);
+  const { item: existingItem } = await entry.json();
+  const linked = await finish(...await authorize(existing, b));
+  assert.equal(linked.headers.get('location'), '/#painel');
+  assert.equal((await session(b)).status, 401);
+  assert.equal((await (await session(newSession(linked))).json()).user.id, before.id);
+  assert.deepEqual((await list(newSession(linked))).map(item => item.id), [existingItem.id]);
+  assert.deepEqual(await list(newSession(repeat)), []);
+  assert.equal((await api('transactions/' + existingItem.id, {
+    method: 'PATCH', cookie: newSession(repeat), body: { amount: 1 },
+  })).status, 404);
+  const revokedFlow = await authorize(existing, newSession(linked));
+  assert.equal((await api('auth/logout', { method: 'POST', cookie: newSession(linked), body: {} })).status, 204);
+  assert.equal((await finish(...revokedFlow)).headers.get('location'), failed);
 });
