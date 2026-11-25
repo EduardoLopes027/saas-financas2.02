@@ -316,7 +316,6 @@ function mountHome(showDashboard, spendingCategory = ''){
 }
 
 const transactionDate = new Intl.DateTimeFormat('pt-BR', {timeZone:'UTC'});
-const savingsRate = new Intl.NumberFormat('pt-BR', {style:'percent', maximumFractionDigits:1});
 const categoryIcons = {
   Salário:'account_balance', Moradia:'account_balance_wallet', Alimentação:'shopping_basket',
   Transporte:'local_taxi', Lazer:'subscriptions'
@@ -393,16 +392,22 @@ function updateTransactionSummary(inPeriod){
   const expenses = inPeriod.filter(item => item.type === 'Despesa');
   const income = sum(incomes);
   const expense = sum(expenses);
-  const balance = income - expense;
+  const monthly = monthlyBalance(records(), filters.allMonths ? '' : selectedMonth);
   main.querySelector('[data-total=income]').textContent = signedMoney(income, '+');
   main.querySelector('[data-total=expense]').textContent = signedMoney(expense, '−');
-  main.querySelector('[data-total=balance]').textContent = signedMoney(balance, balance < 0 ? '−' : '+');
+  const balance = main.querySelector('[data-total=balance]');
+  const carryOver = main.querySelector('[data-detail=carry-over]');
+  balance.textContent = signedMoney(monthly.total, monthly.total < 0 ? '−' : '+');
+  balance.classList.toggle('negative', monthly.total < 0);
+  carryOver.textContent = signedMoney(monthly.carryOver, monthly.carryOver < 0 ? '−' : '+');
+  carryOver.classList.toggle('negative', monthly.carryOver < 0);
+  const monthlyExpenses = main.querySelector('[data-detail=monthly-expenses]');
+  monthlyExpenses.textContent = signedMoney(monthly.expenses, '−');
+  monthlyExpenses.classList.toggle('negative', monthly.expenses > 0);
+  monthlyExpenses.previousElementSibling.textContent = filters.allMonths ? 'Despesas do período:' : 'Despesas do mês:';
   main.querySelector('[data-detail=income]').textContent = incomes.length + (incomes.length === 1 ? ' receita registrada' : ' receitas registradas');
   main.querySelector('[data-detail=expense]').textContent = expenses.length + (expenses.length === 1 ? ' despesa registrada' : ' despesas registradas');
-  main.querySelector('[data-detail=balance]').textContent = income ? 'Taxa de poupança · ' + savingsRate.format(balance / income) : 'Taxa de poupança · Indisponível sem receitas';
-  const badge = stitchSlot(main,'balance-status');
-  badge.dataset.status = balance < 0 ? 'negative' : balance > 0 ? 'positive' : 'neutral';
-  badge.textContent = balance < 0 ? 'Déficit' : balance > 0 ? 'Superávit' : 'Saldo zerado';
+
 }
 
 function updateTransactionPeriod(){

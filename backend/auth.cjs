@@ -30,6 +30,7 @@ const assets = new Map([
   ["/assets/css/new-entry.css",["assets/css/new-entry.css","text/css; charset=utf-8"]],
   ["/assets/js/app.js",["assets/js/app.js","text/javascript; charset=utf-8"]],
   ["/assets/js/new-entry.js",["assets/js/new-entry.js","text/javascript; charset=utf-8"]],
+  ["/assets/js/monthly-balance.js",["assets/js/monthly-balance.js","text/javascript; charset=utf-8"]],
   ["/assets/images/FinFlow-avatar.jpg",["assets/images/FinFlow-avatar.jpg","image/jpeg"]],
   ["/assets/fonts/InterVariable.woff2",["assets/fonts/InterVariable.woff2","font/woff2"]],
   ["/assets/fonts/HankenGrotesk.woff2",["assets/fonts/HankenGrotesk.woff2","font/woff2"]],

@@ -92,11 +92,14 @@
       <article class="transactions-stat" data-tone="balance">
         <div class="transactions-stat-header">
           <span class="transactions-stat-icon material-symbols-outlined" aria-hidden="true">account_balance_wallet</span>
-          <h2>Balanço do período</h2>
-          <span class="transactions-stat-badge" data-stitch="balance-status"></span>
+          <h2>Saldo Total do Mês</h2>
+          <span class="transactions-stat-badge">Acumulado</span>
         </div>
         <p class="transactions-stat-value" data-total="balance"></p>
-        <p class="transactions-stat-detail" data-detail="balance"></p>
+        <dl class="transactions-balance-breakdown">
+          <div><dt>Saldo anterior:</dt> <dd><span data-detail="carry-over"></span> <span aria-hidden="true">•</span></dd></div>
+          <div><dt>Despesas do mês:</dt> <dd data-detail="monthly-expenses"></dd></div>
+        </dl>
       </article>
     </section>
     <section class="transactions-filters" aria-label="Filtros dos lançamentos">
@@ -509,5 +512,6 @@
 </div>
 </template>
 <script src="./assets/js/new-entry.js"></script>
+<script src="./assets/js/monthly-balance.js"></script>
 <script src="./assets/js/app.js"></script>
 </html>

@@ -241,29 +241,40 @@
   color: var(--stat-icon, var(--transaction-indigo));
 }
 
+.transactions-stat[data-tone="balance"] .transactions-stat-icon {
+  border-radius: 12px;
+  font-size: 20px;
+}
+
 .transactions-stat-badge {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
   min-height: 24px;
   padding: 3px 9px;
   border-radius: 999px;
   background: #e5eeff;
-  color: #233353;
+  color: var(--transaction-indigo);
   font-size: .75rem;
 }
 
-.transactions-stat-badge[hidden] {
-  display: none;
+.transactions-balance-breakdown {
+  margin: 0;
+  color: var(--transaction-muted);
+  font-variant-numeric: tabular-nums;
 }
 
-.transactions-stat-badge[data-status="positive"] {
-  background: #cffae9;
-  color: var(--transaction-income);
+.transactions-balance-breakdown > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 4px;
 }
 
-.transactions-stat-badge[data-status="negative"] {
-  background: #fcecec;
+.transactions-balance-breakdown dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.transactions-stat[data-tone="balance"] .negative {
   color: var(--transaction-expense);
 }
 
@@ -636,8 +647,7 @@
   color: var(--transaction-income);
 }
 
-.transactions-status .material-symbols-outlined,
-.transactions-stat-badge .material-symbols-outlined {
+.transactions-status .material-symbols-outlined {
   font-size: .875rem;
 }
 
