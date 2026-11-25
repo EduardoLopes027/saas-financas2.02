@@ -23,7 +23,7 @@ const blankEntry = () => ({
   repeat:false, recurrence:'Mensal', split:false, installments:2, receipt:null
 });
 const entryField = (name, label, control) =>
-  '<label class="entry-field" data-field="' + name + '"><span>' + label + '</span>' + control
+  '<label class="entry-field" data-field="' + name + '"><span>' + label + '</span><span class="entry-control">' + control + '</span>'
   + '<span class="field-error" id="entry-error-' + name + '"></span></label>';
 const entrySelect = (name, values, selected, placeholder = 'Selecione') =>
   '<select name="' + name + '" aria-describedby="entry-error-' + name + '">'
