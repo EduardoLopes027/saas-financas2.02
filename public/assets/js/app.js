@@ -811,7 +811,9 @@ function updateAccountChrome(authPreview){
   document.body.classList.toggle('account-mode',appMode!=='demo');
   document.body.classList.toggle('account-gated',authPreview||(appMode!=='demo'&&!accountUser));
   accountTools.hidden=!accountUser;
-  accountTools.querySelector('.account-email').textContent=accountUser?.email ?? '';
+  const email=accountTools.querySelector('.account-email');
+  email.textContent=accountUser?.email ?? '';
+  email.title=email.textContent;
   if(!accountUser && !authBusy) googleLinkStatus.textContent='';
 }
 
@@ -1039,6 +1041,13 @@ window.addEventListener('hashchange',()=>{
   }
 });
 document.querySelector('#account-logout').addEventListener('click',logout);
+accountTools.closest('details').addEventListener('keydown',event=>{
+  const settings=event.currentTarget;
+  if(event.key!=='Escape' || !settings.open || accountTools.hidden) return;
+  event.preventDefault();
+  settings.open=false;
+  settings.querySelector('summary').focus();
+});
 googleLink.addEventListener('click',linkGoogleAccount);
 window.addEventListener('pageshow',event=>{
   if(!event.persisted) return;
