@@ -626,7 +626,14 @@ function mountTransactions(){
   });
   const typeFilters = main.querySelector('.transactions-types');
   typeFilters.addEventListener('focusin', event => {
-    if(transactionsMobile.matches) event.target.scrollIntoView({block:'nearest', inline:'nearest'});
+    if(!transactionsMobile.matches || typeFilters.scrollWidth <= typeFilters.clientWidth) return;
+    const chip = event.target.getBoundingClientRect();
+    const track = typeFilters.getBoundingClientRect();
+    const inset = parseFloat(getComputedStyle(typeFilters).scrollPaddingInlineStart) || 0;
+    const start = chip.left - track.left - inset;
+    const end = chip.right - track.right + inset;
+    if(start < 0) typeFilters.scrollLeft += start;
+    else if(end > 0) typeFilters.scrollLeft += end;
   });
   typeFilters.querySelectorAll('[data-type]').forEach(button => button.addEventListener('click', () => {
     if(filters.type === button.dataset.type) return;

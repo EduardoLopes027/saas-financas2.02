@@ -1093,11 +1093,11 @@
   .transactions-balance-breakdown {
     display: flex;
     flex-wrap: wrap;
-    gap: 2px 6px;
+    gap: 2px 5px;
     border-radius: 18px;
-    padding: 6px 10px;
+    padding: 6px 8px;
     background: var(--transaction-pill);
-    font-size: .82rem;
+    font-size: .8rem;
   }
 
   .transactions-filters {
