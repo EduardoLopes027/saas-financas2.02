@@ -53,7 +53,7 @@
 }
 
 .transactions-actions,
-.transactions-period,
+.month-picker,
 .transactions-export,
 .transactions-add {
   display: flex;
@@ -67,15 +67,15 @@
   min-width: 0;
 }
 
-.transactions-period,
+.month-picker,
 .transactions-export {
   border: 0;
   border-radius: 999px;
   background: #fff;
-  box-shadow: var(--transaction-shadow);
+  box-shadow: var(--transaction-shadow, 0 4px 20px -2px #0f172a0a, 0 2px 6px -1px #0f172a05);
 }
 
-.transactions-period {
+.month-picker {
   gap: 0;
   max-width: 100%;
   padding-inline: 4px;
@@ -91,13 +91,14 @@
   cursor: pointer;
 }
 
-.transactions-period #transactions-month {
+.month-picker [data-month-label] {
   padding-inline: 5px;
   font-weight: 650;
-  white-space: nowrap;
+  text-align: center;
+  min-width: 0;
 }
 
-.transactions-period button,
+.month-picker button,
 .transactions-search button,
 .transactions-clear,
 .transactions-pagination button {
@@ -112,8 +113,28 @@
   color: inherit;
 }
 
-.transactions-period > .material-symbols-outlined {
-  color: var(--transaction-indigo);
+.month-picker-icon {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  color: #4338ca;
+}
+
+.month-picker button:disabled {
+  opacity: .5;
+  cursor: default;
+}
+
+@media (max-width: 670px) {
+  .stitch-greeting .home-month-picker {
+    grid-row: 2;
+    grid-column: 1 / -1;
+    justify-self: start;
+  }
+
+  body.home-view .stitch-greeting [data-stitch="intro"] {
+    display: block;
+  }
 }
 
 .transactions-export {
@@ -137,7 +158,11 @@
   background: #3125b2;
 }
 
-.transactions-page :is(.transactions-period, .transactions-search, .transactions-pagination) button:hover:not(:disabled),
+.month-picker button:hover:not(:disabled) {
+  background: #edf2ff;
+}
+
+.transactions-page :is(.transactions-search, .transactions-pagination) button:hover:not(:disabled),
 .transactions-export:hover:not(:disabled) {
   background: var(--transaction-pill);
 }

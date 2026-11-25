@@ -10,25 +10,22 @@ const currency = new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}
 const format = cents => currency.format(cents/100);
 const demoDate = '2026-11-17';
 const demoMonth = demoDate.slice(0,7);
-const monthsOfYear = year => Array.from({length:12}, (_, index) =>
-  year + '-' + String(index + 1).padStart(2,'0')
-);
 const monthLabel = new Intl.DateTimeFormat('pt-BR',{month:'long',year:'numeric',timeZone:'UTC'});
 const formatMonth = month => monthLabel.format(new Date(month + '-01T00:00:00Z'));
 const main = document.querySelector('main');
 const scenario = document.querySelector('#scenario');
-const filters = {month:demoMonth,type:'',category:'',paymentMethod:''};
+let selectedMonth = demoMonth;
+const filters = {allMonths:false,type:'',category:'',paymentMethod:''};
 const paymentMethods = ['Pix','Cartão de crédito','Cartão de débito','Débito automático','Boleto bancário','Transferência','Crédito em conta'];
 const transactionStatuses = ['Pago','Pendente'];
 let listPage = 1;
 let listPageSize = 10;
 const deletingTransactionIds = new Set();
 
-function resetTransactionFilters(month){
-  Object.assign(filters,{month,type:'',category:'',paymentMethod:''});
+function resetTransactionFilters(allMonths = false){
+  Object.assign(filters,{allMonths,type:'',category:'',paymentMethod:''});
   listPage = 1;
 }
-let homeMonth = demoMonth;
 let balanceHidden = false;
 const search = document.querySelector('#search-query');
 let query = '';
@@ -143,11 +140,17 @@ function homeSpending(expenses, category, days){
   return chart;
 }
 
+function utcDate(year, month, day){
+  const date = new Date(0);
+  date.setUTCFullYear(year,month,day);
+  return date;
+}
+
 function fifthWeekday(year, month){
-  const date = new Date(Date.UTC(year,month,1));
+  const date = utcDate(year,month,1);
   for(let weekdays=0;;date.setUTCDate(date.getUTCDate()+1)){
     const weekday = date.getUTCDay();
-    if(weekday >= 1 && weekday <= 5 && ++weekdays === 5) return date.toISOString().slice(0,10);
+    if(weekday >= 1 && weekday <= 5 && ++weekdays === 5) return date.toISOString().split('T')[0];
   }
 }
 
@@ -170,12 +173,13 @@ function salaryForecast(items, reference, salaryDay){
     const estimate = offset => {
       const targetYear = Math.floor(offset / 12);
       const targetMonth = offset % 12 + 1;
-      const end = new Date(Date.UTC(targetYear,targetMonth,0)).getUTCDate();
-      return new Date(Date.UTC(targetYear,targetMonth-1,Math.min(day,end))).toISOString().slice(0,10);
+      const end = utcDate(targetYear,targetMonth,0).getUTCDate();
+      return utcDate(targetYear,targetMonth-1,Math.min(day,end)).toISOString().split('T')[0];
     };
     date = estimate(earliest);
     if(date < reference) date = estimate(earliest + 1);
   }
+  if(date.startsWith('+')) return null;
   const before = items.filter(item => item.date < date);
   const balance = sum(before.filter(item=>item.type==='Receita')) - sum(before.filter(item=>item.type==='Despesa'));
   const days = (Date.parse(date) - Date.parse(reference)) / 86400000;
@@ -189,16 +193,20 @@ function localCalendarDate(now = new Date()){
     .map((part,index)=>String(part).padStart(index===0?4:2,'0')).join('-');
 }
 
-function mountHome(showDashboard){
+function mountHome(showDashboard, spendingCategory = ''){
   const home = stitchTemplate('home');
   if(accountUser){
     const name = [accountUser.full_name, accountUser.name].find(value => typeof value === 'string' && value.trim());
     const firstName = name?.trim().split(/\s+/, 1)[0];
     home.querySelector('h1').textContent = firstName ? 'Olá, ' + firstName : 'Olá';
   }
-  const monthText = formatMonth(homeMonth);
-  const monthSelect = home.querySelector('#home-month');
-  monthSelect.innerHTML = monthOptions(homeMonth,{baseMonths:monthsOfYear((accountUser ? localCalendarDate() : demoDate).slice(0,4))});
+  const monthText = formatMonth(selectedMonth);
+  mountMonthPicker(home, false, () => {
+    filters.allMonths = false;
+    const category = main.querySelector('[data-spend-category][aria-pressed="true"]');
+    if(showDashboard) mountHome(true, category?.dataset.spendCategory);
+    else render(false);
+  });
   stitchSlot(home,'intro').textContent = 'Aqui está o resumo financeiro do seu mês de ' + monthText + '.';
   if(!showDashboard){
     home.querySelectorAll('.stitch-metrics,.mobile-quick,.stitch-spending,.home-recent').forEach(node=>node.remove());
@@ -208,24 +216,28 @@ function mountHome(showDashboard){
 
   const items = records();
   const today = localCalendarDate();
-  const month = items.filter(item => item.date.slice(0,7) === homeMonth);
-  const throughToday = items.filter(item => item.date <= today);
-  const income = sum(throughToday.filter(item => item.type === 'Receita'));
-  const spentThroughToday = sum(throughToday.filter(item => item.type === 'Despesa'));
+  const month = items.filter(item => item.date.startsWith(selectedMonth));
+  const monthStart = selectedMonth + '-01';
+  const monthEnd = new Date(monthStart + 'T00:00:00Z');
+  monthEnd.setUTCMonth(monthEnd.getUTCMonth() + 1, 0);
+  const days = monthEnd.getUTCDate();
+  const isCurrentMonth = today.startsWith(selectedMonth);
+  const cutoff = isCurrentMonth ? today : monthEnd.toISOString().slice(0,10);
+  const throughCutoff = items.filter(item => item.date <= cutoff);
   const expenses = month.filter(item => item.type === 'Despesa');
   const spent = sum(expenses);
-  const balance = income - spentThroughToday;
-  const [year, monthNumber] = homeMonth.split('-').map(Number);
-  const days = new Date(Date.UTC(year, monthNumber, 0)).getUTCDate();
-  const salary = salaryForecast(items,today,accountUser?.salaryDay);
+  const monthIncome = sum(month.filter(item => item.type === 'Receita'));
+  const balance = sum(throughCutoff.filter(item => item.type === 'Receita'))
+    - sum(throughCutoff.filter(item => item.type === 'Despesa'));
+  const salary = salaryForecast(items, isCurrentMonth ? today : monthStart, accountUser?.salaryDay);
   const salaryDate = salary ? salaryDateLabel.format(new Date(salary.date)) : '';
   const salaryPeriod = salary ? (salary.days === 0 ? 'Hoje' : salary.days === 1 ? 'Falta 1 dia' : 'Faltam ' + salary.days + ' dias') + ' · ' + salaryDate : 'Sem data de salário';
   const recent = newest(month).slice(0,5);
   const moneyNumber = cents => currency.formatToParts(cents / 100).filter(part => part.type !== 'currency' && part.type !== 'literal').map(part => part.value).join('');
   const categoriesUsed = new Set(expenses.map(item=>item.category)).size;
   const values = {
-    balance:moneyNumber(balance), 'balance-badge':'Até hoje',
-    income:'+' + format(income), 'spent-summary':'−' + format(spentThroughToday),
+    balance:moneyNumber(balance), 'balance-badge':isCurrentMonth ? 'Até hoje' : 'Até ' + transactionDate.format(monthEnd),
+    income:'+' + format(monthIncome), 'spent-summary':'−' + format(spent),
     'salary-prefix':salary ? 'R$' : '',
     'salary-balance':salary ? moneyNumber(salary.balance) : '—',
     'salary-period':salaryPeriod,
@@ -236,7 +248,7 @@ function mountHome(showDashboard){
     'salary-status':salary ? (salary.estimated ? 'Estimativa' : 'Agendado') : '',
     'analysis-badge':categoriesUsed ? categoriesUsed + (categoriesUsed === 1 ? ' categoria' : ' categorias') : '',
     'analysis-copy':'Evolução e distribuição de despesas ao longo das semanas de ' + monthText,
-    'mobile-spent':format(spent),
+    'mobile-spent':format(spendingCategory ? sum(expenses.filter(item => item.category === spendingCategory)) : spent),
     'recent-count':recent.length ? recent.length + (recent.length === 1 ? ' recente' : ' recentes') : ''
   };
   for(const [name,value] of Object.entries(values)){
@@ -244,7 +256,6 @@ function mountHome(showDashboard){
     target.textContent=value;
     target.hidden=!value;
   }
-  const monthIncome = sum(month.filter(item => item.type === 'Receita'));
   if (monthIncome > 0 && salary) {
     const percentage = Math.round(100 * spent / monthIncome);
     stitchSlot(home,'pace').hidden = false;
@@ -256,8 +267,9 @@ function mountHome(showDashboard){
   stitchSlot(home,'salary-daily-note').classList.toggle('mobile-redundant',!!salary && salary.days > 0 && salary.balance >= 0);
   stitchSlot(home,'recent-rows').innerHTML = recent.length ? rows(recent,true) : '<p>Nenhum lançamento neste mês.</p>' + add;
   const chart = stitchSlot(home,'chart');
-  chart.replaceChildren(homeSpending(expenses,'',days));
+  chart.replaceChildren(homeSpending(expenses,spendingCategory,days));
   const buttons = [...home.querySelectorAll('[data-spend-category]')];
+  buttons.forEach(button => button.setAttribute('aria-pressed',String(button.dataset.spendCategory === spendingCategory)));
   buttons.forEach(button => button.addEventListener('click',()=>{
     buttons.forEach(item=>item.setAttribute('aria-pressed',String(item === button)));
     chart.replaceChildren(homeSpending(expenses,button.dataset.spendCategory,days));
@@ -281,16 +293,12 @@ function mountHome(showDashboard){
     balanceHidden=!balanceHidden;
     updateBalanceVisibility();
   });
-  home.querySelectorAll('[data-list-month]').forEach(item=>{item.dataset.listMonth=homeMonth;});
+  home.querySelectorAll('[data-list-month]').forEach(link => link.addEventListener('click',()=>{
+    search.value='';
+    query='';
+    resetTransactionFilters();
+  }));
   main.replaceChildren(home);
-}
-
-function monthOptions(selected, {includeAll = false, baseMonths = [accountUser ? localCalendarDate().slice(0,7) : demoMonth]} = {}){
-  const months = new Set([...baseMonths, ...records().map(item => item.date.slice(0,7))]);
-  if(selected) months.add(selected);
-  return (includeAll ? '<option value="">Todos os meses</option>' : '') + [...months].sort().reverse().map(month => {
-    return '<option value="' + month + '"' + (month === selected ? ' selected' : '') + '>' + formatMonth(month) + '</option>';
-  }).join('');
 }
 
 const transactionDate = new Intl.DateTimeFormat('pt-BR', {timeZone:'UTC'});
@@ -302,14 +310,38 @@ const categoryIcons = {
 const signedMoney = (amount, sign) => (amount && sign ? sign + ' ' : '') + format(Math.abs(amount));
 
 function adjacentMonth(month, step){
-  if(!month || (month === '0001-01' && step < 0) || (month === '9999-12' && step > 0)) return '';
+  if((month === '0001-01' && step < 0) || (month === '9999-12' && step > 0)) return '';
   const date = new Date(month + '-01T00:00:00Z');
   date.setUTCMonth(date.getUTCMonth() + step);
   return date.toISOString().slice(0,7);
 }
 
+function mountMonthPicker(root, allMonths, onChange){
+  const slot = root.querySelector('[data-month-picker]');
+  slot.replaceChildren(stitchTemplate('month-picker'));
+  const label = slot.querySelector('[data-month-label]');
+  const buttons = [...slot.querySelectorAll('[data-month-step]')];
+  const update = () => {
+    label.textContent = allMonths ? 'Todos os meses' : formatMonth(selectedMonth);
+    buttons.forEach(button => {
+      button.disabled = allMonths || !adjacentMonth(selectedMonth, Number(button.dataset.monthStep));
+    });
+  };
+  update();
+  buttons.forEach(button => button.addEventListener('click', () => {
+    const step = Number(button.dataset.monthStep);
+    selectedMonth = adjacentMonth(selectedMonth, step);
+    update();
+    onChange();
+    const picker = main.querySelector('[data-month-picker]');
+    const target = picker.querySelector('[data-month-step="' + step + '"]:enabled')
+      ?? picker.querySelector('[data-month-step]:enabled');
+    target?.focus({preventScroll:true});
+  }));
+}
+
 function transactionsInPeriod(){
-  return records().filter(item => !filters.month || item.date.startsWith(filters.month));
+  return records().filter(item => filters.allMonths || item.date.startsWith(selectedMonth));
 }
 
 function filteredTransactions(inPeriod){
@@ -360,10 +392,6 @@ function updateTransactionSummary(inPeriod){
 }
 
 function updateTransactionPeriod(){
-  main.querySelector('#transactions-month').textContent = filters.month ? formatMonth(filters.month) : 'Todos os meses';
-  main.querySelectorAll('[data-month-step]').forEach(button => {
-    button.disabled = !adjacentMonth(filters.month, Number(button.dataset.monthStep));
-  });
   updateTransactionSummary(transactionsInPeriod());
 }
 
@@ -432,7 +460,7 @@ function exportTransactions(){
   const file = URL.createObjectURL(new Blob(['\uFEFF',csv], {type:'text/csv;charset=utf-8'}));
   const link = document.createElement('a');
   link.href = file;
-  link.download = 'finflow-lancamentos' + (filters.month ? '-' + filters.month : '') + '.csv';
+  link.download = 'finflow-lancamentos' + (filters.allMonths ? '' : '-' + selectedMonth) + '.csv';
   document.body.append(link);
   link.click();
   link.remove();
@@ -546,12 +574,10 @@ function mountTransactions(){
     + '<option value="unknown">Não informada</option>';
   payment.value = filters.paymentMethod;
 
-  main.querySelectorAll('[data-month-step]').forEach(button => button.addEventListener('click', () => {
-    filters.month = adjacentMonth(filters.month, Number(button.dataset.monthStep));
+  mountMonthPicker(main, filters.allMonths, () => {
     updateTransactionPeriod();
     listResults(true);
-    if(button.disabled) main.querySelector('[data-month-step="' + -Number(button.dataset.monthStep) + '"]').focus();
-  }));
+  });
   listSearch.addEventListener('input', () => {
     search.value = listSearch.value;
     query = searchKey(listSearch.value);
@@ -703,8 +729,8 @@ function forgetAccount(){
   balanceHidden=false;
   query='';
   search.value='';
-  homeMonth=localCalendarDate().slice(0,7);
-  resetTransactionFilters(homeMonth);
+  selectedMonth=localCalendarDate().slice(0,7);
+  resetTransactionFilters();
   listPageSize=10;
 }
 
@@ -748,7 +774,7 @@ async function loadAccountTransactions(){
 async function restoreAccount(){
   const previousUser=accountUser;
   const previousDraft=draft;
-  const previousView={month:homeMonth,filters:{...filters},query,search:search.value,balanceHidden,listPage,listPageSize};
+  const previousView={month:selectedMonth,filters:{...filters},query,search:search.value,balanceHidden,listPage,listPageSize};
   suspendEntryDraft(previousUser,previousDraft);
   forgetAccount();
   const epoch=accountEpoch;
@@ -770,7 +796,7 @@ async function restoreAccount(){
     draft=resumeEntryDraft(user);
     if(user.id===previousUser?.id){
       draft=previousDraft ?? draft;
-      homeMonth=previousView.month;
+      selectedMonth=previousView.month;
       Object.assign(filters,previousView.filters);
       ({listPage,listPageSize}=previousView);
       query=previousView.query;
@@ -970,23 +996,13 @@ function render(focus){
     }else mountEntry(item);
   }
   else if(view==='lancamentos') mountTransactions();
-  main.querySelector('#home-month')?.addEventListener('change',event=>{
-    homeMonth=event.currentTarget.value;
-    render(false);
-    main.querySelector('#home-month').focus({preventScroll:true});
-  });
-  main.querySelectorAll('[data-list-month]').forEach(link => link.addEventListener('click',()=>{
-    search.value='';
-    query='';
-    resetTransactionFilters(link.dataset.listMonth);
-  }));
   if(focus) main.querySelector('h1').focus();
 }
 document.querySelector('#transaction-search').addEventListener('submit',event=>{
   event.preventDefault();
   setMobileSearch(false);
   query=searchKey(search.value);
-  resetTransactionFilters('');
+  resetTransactionFilters(true);
   if(location.hash==='#lancamentos') render(true);
   else location.hash='lancamentos';
 });

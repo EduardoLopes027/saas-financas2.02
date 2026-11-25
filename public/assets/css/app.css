@@ -286,3 +286,9 @@ input,select,button,.nav{border-color:#85829c;color:var(--home-ink)}
   .account-mode .stitch-greeting>div:first-of-type{grid-column:1}
   .account-mode .stitch-greeting .stitch-add{grid-column:2}
 }
+
+@media (max-width: 670px) {
+  .mobile-dock {
+    z-index: 30;
+  }
+}

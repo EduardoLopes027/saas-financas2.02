@@ -492,7 +492,8 @@ function wireEntry(data,baseline,item){
     if(!item || item.date.slice(0,7) !== record.date.slice(0,7)){
       search.value = '';
       query = '';
-      resetTransactionFilters(record.date.slice(0,7));
+      selectedMonth = record.date.slice(0,7);
+      resetTransactionFilters();
     }
     const notice = item ? 'Lançamento atualizado.' : refreshed ? 'Lançamento salvo.' : 'Lançamento salvo. Atualize o Extrato para consultar todos os registros.';
     if(location.hash !== (item ? '#editar/'+item.id : '#novo')){message = notice;render(false);return;}
