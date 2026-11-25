@@ -292,3 +292,6 @@ input,select,button,.nav{border-color:#85829c;color:var(--home-ink)}
     z-index: 30;
   }
 }
+
+.stitch-balance :has(> .future-balance-badge) { flex-wrap: wrap; }
+.stitch-balance [data-stitch="balance-badge"].future-balance-badge { position: static; }

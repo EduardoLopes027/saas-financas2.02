@@ -154,16 +154,25 @@ function fifthWeekday(year, month){
   }
 }
 
-function salaryForecast(items, reference, salaryDay){
+function configuredSalaryDate(salaryDay, year, month){
+  if(salaryDay === '5-business' || salaryDay === '5') return fifthWeekday(year,month-1);
+  const lastDay = utcDate(year,month,0).getUTCDate();
+  const day = salaryDay === '30' ? lastDay : Number(salaryDay);
+  return utcDate(year,month-1,Math.min(day,lastDay)).toISOString().split('T')[0];
+}
+
+function salaryForecast(items, reference, salaryDay, monthOnly = false){
   const salaries = items.filter(item => item.type === 'Receita' && item.category === 'Salário');
   const dates = salaries.map(item => item.date).sort();
-  let date = dates.find(value => value >= reference);
+  const month = reference.slice(0,7);
+  let date = dates.find(value => value >= reference && (!monthOnly || value.startsWith(month)));
   const estimated = !date;
-  if(estimated && salaryDay === '5-business'){
-    const [year, month] = reference.split('-').map(Number);
-    date = fifthWeekday(year,month-1);
-    if(date < reference) date = fifthWeekday(year,month);
+  if(estimated && ['1','5','5-business','10','15','20','25','30'].includes(salaryDay)){
+    const [year, monthNumber] = reference.split('-').map(Number);
+    date = configuredSalaryDate(salaryDay,year,monthNumber);
+    if(date < reference && !monthOnly) date = configuredSalaryDate(salaryDay,year,monthNumber+1);
   }else if(estimated){
+    if(monthOnly) return null;
     const last = dates.at(-1);
     if(!last) return null;
     const [year, month, day] = last.split('-').map(Number);
@@ -222,6 +231,7 @@ function mountHome(showDashboard, spendingCategory = ''){
   monthEnd.setUTCMonth(monthEnd.getUTCMonth() + 1, 0);
   const days = monthEnd.getUTCDate();
   const isCurrentMonth = today.startsWith(selectedMonth);
+  const isFutureMonth = monthStart > today;
   const cutoff = isCurrentMonth ? today : monthEnd.toISOString().slice(0,10);
   const throughCutoff = items.filter(item => item.date <= cutoff);
   const expenses = month.filter(item => item.type === 'Despesa');
@@ -229,14 +239,18 @@ function mountHome(showDashboard, spendingCategory = ''){
   const monthIncome = sum(month.filter(item => item.type === 'Receita'));
   const balance = sum(throughCutoff.filter(item => item.type === 'Receita'))
     - sum(throughCutoff.filter(item => item.type === 'Despesa'));
-  const salary = salaryForecast(items, isCurrentMonth ? today : monthStart, accountUser?.salaryDay);
+  const salary = salaryForecast(items, isCurrentMonth ? today : monthStart, accountUser?.salaryDay, isFutureMonth);
+  const balanceBadge = isFutureMonth
+    ? 'A partir de ' + (salary?.date ?? monthStart).split('-').reverse().join('/')
+    : isCurrentMonth ? 'Até hoje' : 'Até ' + transactionDate.format(monthEnd);
+  stitchSlot(home,'balance-badge').classList.toggle('future-balance-badge', isFutureMonth);
   const salaryDate = salary ? salaryDateLabel.format(new Date(salary.date)) : '';
   const salaryPeriod = salary ? (salary.days === 0 ? 'Hoje' : salary.days === 1 ? 'Falta 1 dia' : 'Faltam ' + salary.days + ' dias') + ' · ' + salaryDate : 'Sem data de salário';
   const recent = newest(month).slice(0,5);
   const moneyNumber = cents => currency.formatToParts(cents / 100).filter(part => part.type !== 'currency' && part.type !== 'literal').map(part => part.value).join('');
   const categoriesUsed = new Set(expenses.map(item=>item.category)).size;
   const values = {
-    balance:moneyNumber(balance), 'balance-badge':isCurrentMonth ? 'Até hoje' : 'Até ' + transactionDate.format(monthEnd),
+    balance:moneyNumber(balance), 'balance-badge':balanceBadge,
     income:'+' + format(monthIncome), 'spent-summary':'−' + format(spent),
     'salary-prefix':salary ? 'R$' : '',
     'salary-balance':salary ? moneyNumber(salary.balance) : '—',
