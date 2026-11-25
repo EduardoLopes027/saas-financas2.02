@@ -35,8 +35,8 @@
 </form>
 <div class="top-tools">
 <button class="toolbar-icon mobile-search-toggle" type="button" aria-label="Abrir busca" aria-expanded="false" aria-controls="transaction-search"><span class="material-symbols-outlined" aria-hidden="true">search</span></button>
-<button class="toolbar-icon" type="button" disabled aria-label="Notificações indisponíveis" title="Notificações indisponíveis"><span class="material-symbols-outlined" aria-hidden="true">notifications</span></button>
-<details class="toolbar-settings"><summary class="toolbar-icon" aria-label="Configurações do protótipo" title="Configurações do protótipo"><span class="material-symbols-outlined" aria-hidden="true">tune</span></summary>
+<button class="toolbar-icon toolbar-notifications" type="button" disabled aria-label="Notificações indisponíveis" title="Notificações indisponíveis"><span class="material-symbols-outlined" aria-hidden="true">notifications</span></button>
+<details class="toolbar-settings"><summary class="toolbar-icon" aria-label="Configurações do protótipo" title="Configurações do protótipo"><span class="material-symbols-outlined transactions-desktop-label" aria-hidden="true">tune</span><svg class="transactions-mobile-only" aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M16 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0ZM4 21v-2a5 5 0 0 1 5-5h6a5 5 0 0 1 5 5v2Z"/></svg></summary>
 <label class="test demo-scenario"><small>Cenário do protótipo</small><select id="scenario"><option value="normal">Dados fictícios</option><option value="empty">Sem lançamentos</option><option value="load">Falha de carregamento</option><option value="save">Falha ao salvar</option></select></label>
 <div class="test account-tools" hidden><strong class="account-email"></strong><button type="button" id="account-google-link">Vincular conta Google</button><p id="account-google-status" role="status"></p><button type="button" id="account-logout">Sair da conta</button></div></details>
 <div class="top-profile"><img class="avatar" src="./assets/images/FinFlow-avatar.jpg" alt=""><strong>Beatriz</strong></div>
@@ -46,7 +46,7 @@
   <a href="#lancamentos" aria-label="Lançamentos"><span class="material-symbols-outlined" aria-hidden="true">receipt_long</span></a>
   <button type="button" disabled aria-label="Cartões indisponíveis"><span class="material-symbols-outlined" aria-hidden="true">credit_card</span></button>
   <button type="button" data-mobile-spending aria-label="Gastos semanais"><span class="material-symbols-outlined" aria-hidden="true">trending_up</span></button>
-  <button type="button" data-mobile-menu aria-label="Configurações do protótipo"><span class="material-symbols-outlined" aria-hidden="true">tune</span></button>
+  <button type="button" data-mobile-menu aria-label="Configurações do protótipo"><span class="material-symbols-outlined transactions-desktop-label" aria-hidden="true">tune</span><svg class="transactions-mobile-only" aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
 </nav>
 <main class="wrap" id="principal" tabindex="-1"></main>
 <template id="stitch-month-picker">
@@ -61,14 +61,16 @@
   <div class="transactions-page">
     <div class="transactions-heading">
       <div class="transactions-heading-copy">
-        <p class="transactions-eyebrow">Finanças pessoais <span aria-hidden="true">/</span> <strong>Extrato consolidado</strong></p>
+        <p class="transactions-eyebrow"><span class="transactions-desktop-label">Finanças pessoais <span aria-hidden="true">/</span> </span><strong>Extrato consolidado</strong></p>
         <h1 tabindex="-1">Lançamentos</h1>
         <p>Gerencie e acompanhe todas as suas receitas e despesas detalhadas.</p>
       </div>
       <div class="transactions-actions">
-        <div data-month-picker></div>
-        <button class="transactions-export" type="button"><span aria-hidden="true">↓</span> Exportar</button>
-        <a class="transactions-add" href="#novo"><span class="material-symbols-outlined" aria-hidden="true">add</span>Novo lançamento</a>
+        <div class="transactions-period-bar">
+          <div data-month-picker></div>
+          <button class="transactions-export" type="button" aria-label="Exportar" title="Exportar"><span class="transactions-desktop-label" aria-hidden="true">↓</span><span class="transactions-desktop-label">Exportar</span><svg class="transactions-mobile-only" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 16V3m-4 4 4-4 4 4M8 10H5v11h14V10h-3"/></svg></button>
+        </div>
+        <a class="transactions-add" href="#novo" aria-label="Novo lançamento"><span class="material-symbols-outlined" aria-hidden="true">add</span><span class="transactions-desktop-label">Novo lançamento</span><span class="transactions-mobile-only">Novo</span></a>
       </div>
     </div>
     <p class="notice transactions-notice" role="status" hidden></p>
@@ -92,37 +94,43 @@
       <article class="transactions-stat" data-tone="balance">
         <div class="transactions-stat-header">
           <span class="transactions-stat-icon material-symbols-outlined" aria-hidden="true">account_balance_wallet</span>
-          <h2>Saldo Total do Mês</h2>
+          <h2><span class="transactions-desktop-label">Saldo Total do Mês</span><span class="transactions-mobile-only">Saldo do Mês</span></h2>
           <span class="transactions-stat-badge">Acumulado</span>
         </div>
         <p class="transactions-stat-value" data-total="balance"></p>
         <dl class="transactions-balance-breakdown">
-          <div><dt>Saldo anterior:</dt> <dd><span data-detail="carry-over"></span> <span aria-hidden="true">•</span></dd></div>
-          <div><dt>Despesas do mês:</dt> <dd data-detail="monthly-expenses"></dd></div>
+          <div><dt><span class="transactions-desktop-label">Saldo anterior:</span><span class="transactions-mobile-only">Anterior:</span></dt> <dd><span data-detail="carry-over"></span> <span aria-hidden="true">•</span></dd></div>
+          <div><dt><span class="transactions-desktop-label" data-expenses-label>Despesas do mês:</span><span class="transactions-mobile-only">Saídas:</span></dt> <dd data-detail="monthly-expenses"></dd></div>
         </dl>
       </article>
     </section>
     <section class="transactions-filters" aria-label="Filtros dos lançamentos">
-      <label class="transactions-search">
-        <span class="material-symbols-outlined" aria-hidden="true">search</span>
-        <input id="transactions-query" type="search" aria-label="Buscar na lista" placeholder="Buscar na lista…">
-      </label>
+      <div class="transactions-search-row">
+        <label class="transactions-search">
+          <span class="material-symbols-outlined" aria-hidden="true">search</span>
+          <input id="transactions-query" type="search" aria-label="Buscar na lista" placeholder="Buscar na lista…">
+        </label>
+        <button class="transactions-mobile-only transactions-filter-toggle" type="button" aria-label="Filtros" aria-expanded="false" aria-controls="transactions-extra-filters"><span class="material-symbols-outlined" aria-hidden="true">tune</span></button>
+      </div>
       <div class="transactions-types" role="group" aria-label="Tipo de lançamento">
         <button type="button" data-type="" aria-pressed="true">Todos</button>
         <button type="button" data-type="Receita" aria-pressed="false">Receitas</button>
         <button type="button" data-type="Despesa" aria-pressed="false">Despesas</button>
         <button type="button" data-type="Transferência" aria-pressed="false">Transferências</button>
       </div>
-      <label class="transactions-select">
-        <span class="material-symbols-outlined" aria-hidden="true">grid_view</span>
-        <select id="transactions-category" aria-label="Categoria"></select>
-      </label>
-      <label class="transactions-select">
-        <span class="material-symbols-outlined" aria-hidden="true">credit_card</span>
-        <select id="transactions-payment" aria-label="Forma de pagamento"></select>
-      </label>
-      <button class="transactions-clear" id="transactions-clear" type="button" title="Limpar filtros" aria-label="Limpar filtros"><span class="material-symbols-outlined" aria-hidden="true">tune</span></button>
+      <div class="transactions-extra-filters" id="transactions-extra-filters">
+        <label class="transactions-select">
+          <span class="material-symbols-outlined" aria-hidden="true">grid_view</span>
+          <select id="transactions-category" aria-label="Categoria"></select>
+        </label>
+        <label class="transactions-select">
+          <span class="material-symbols-outlined" aria-hidden="true">credit_card</span>
+          <select id="transactions-payment" aria-label="Forma de pagamento"></select>
+        </label>
+        <button class="transactions-clear" id="transactions-clear" type="button" title="Limpar filtros" aria-label="Limpar filtros"><span class="material-symbols-outlined" aria-hidden="true">tune</span></button>
+      </div>
     </section>
+    <div class="transactions-mobile-only transactions-list-summary"><span data-stitch="mobile-count"></span><span>Total: <strong data-stitch="period-net"></strong></span></div>
     <section class="transactions-panel" aria-label="Extrato detalhado">
       <table class="transactions-table" role="table">
         <thead role="rowgroup">

@@ -356,11 +356,15 @@ function transactionRow(item){
   const date = transactionDate.format(new Date(item.date + 'T00:00:00Z'));
   const status = transactionStatuses.includes(item.status) ? item.status : '';
   const icon = categoryIcons[item.category] ?? (transfer ? 'sync_alt' : 'payments');
+  const dateElement = '<time datetime="' + item.date + '">' + date + '</time>';
+  const category = escape(item.category);
+  const payment = escape(item.paymentMethod || 'Não informada') + (item.destinationPaymentMethod ? ' → ' + escape(item.destinationPaymentMethod) : '');
   return '<tr role="row" data-tone="' + tone + '">'
-    + '<td role="cell"><time datetime="' + item.date + '">' + date + '</time></td>'
-    + '<td role="cell"><div class="transactions-description"><span class="transactions-category-icon material-symbols-outlined" aria-hidden="true">' + icon + '</span><strong>' + escape(item.description) + '</strong></div></td>'
-    + '<td role="cell"><span class="transactions-category">' + escape(item.category) + '</span></td>'
-    + '<td role="cell"><span class="transactions-payment">' + escape(item.paymentMethod || 'Não informada') + (item.destinationPaymentMethod ? ' → ' + escape(item.destinationPaymentMethod) : '') + '</span></td>'
+    + '<td role="cell">' + dateElement + '</td>'
+    + '<td role="cell"><div class="transactions-description"><span class="transactions-category-icon material-symbols-outlined" aria-hidden="true">' + icon + '</span><div><strong>' + escape(item.description) + '</strong>'
+    + '<small class="transactions-mobile-only transactions-row-meta">' + category + ' · ' + payment + ' · ' + dateElement + '</small></div></div></td>'
+    + '<td role="cell"><span class="transactions-category">' + category + '</span></td>'
+    + '<td role="cell"><span class="transactions-payment">' + payment + '</span></td>'
     + '<td role="cell"><span class="transactions-status" data-status="' + (status ? status.toLowerCase() : 'unknown') + '">'
     + (status ? '<span aria-hidden="true">' + (status === 'Pago' ? '✓' : '◷') + '</span> ' : '') + (status || 'Não informado') + '</span></td>'
     + '<td role="cell" class="transactions-amount" data-tone="' + tone + '">' + signedMoney(item.amount, transfer ? '' : income ? '+' : '−') + '</td>'
@@ -376,6 +380,8 @@ function updateTransactionSummary(inPeriod){
   const income = sum(incomes);
   const expense = sum(expenses);
   const monthly = monthlyBalance(records(), filters.allMonths ? '' : selectedMonth);
+  const periodNet = income - expense;
+  stitchSlot(main,'period-net').textContent = signedMoney(periodNet, periodNet < 0 ? '−' : '+');
   main.querySelector('[data-total=income]').textContent = signedMoney(income, '+');
   main.querySelector('[data-total=expense]').textContent = signedMoney(expense, '−');
   const balance = main.querySelector('[data-total=balance]');
@@ -387,7 +393,7 @@ function updateTransactionSummary(inPeriod){
   const monthlyExpenses = main.querySelector('[data-detail=monthly-expenses]');
   monthlyExpenses.textContent = signedMoney(monthly.expenses, '−');
   monthlyExpenses.classList.toggle('negative', monthly.expenses > 0);
-  monthlyExpenses.previousElementSibling.textContent = filters.allMonths ? 'Despesas do período:' : 'Despesas do mês:';
+  main.querySelector('[data-expenses-label]').textContent = filters.allMonths ? 'Despesas do período:' : 'Despesas do mês:';
   main.querySelector('[data-detail=income]').textContent = incomes.length + (incomes.length === 1 ? ' receita registrada' : ' receitas registradas');
   main.querySelector('[data-detail=expense]').textContent = expenses.length + (expenses.length === 1 ? ' despesa registrada' : ' despesas registradas');
 
@@ -434,6 +440,8 @@ function listResults(resetPage = false){
   stitchSlot(main,'count').textContent = items.length
     ? 'Mostrando ' + (offset+1) + '–' + end + ' de ' + items.length + (items.length === 1 ? ' lançamento' : ' lançamentos')
     : '0 lançamentos';
+  stitchSlot(main,'mobile-count').textContent = items.length + (items.length === 1 ? ' lançamento' : ' lançamentos');
+  main.querySelector('.transactions-filter-toggle').classList.toggle('has-filters', Boolean(filters.category || filters.paymentMethod));
   main.querySelector('.transactions-export').disabled = !items.length;
   updateTransactionPagination(pages);
 }
@@ -561,8 +569,39 @@ function confirmTransactionDeletion(button, dialog){
   dialog.showModal();
 }
 
+const transactionsMobile = matchMedia('(width < 768px)');
+function syncTransactionsSummary(summary){
+  const balance = summary.querySelector('[data-tone=balance]');
+  if(transactionsMobile.matches){
+    summary.prepend(balance);
+    summary.tabIndex = 0;
+    summary.scrollLeft = 0;
+  }else{
+    summary.append(balance);
+    summary.removeAttribute('tabindex');
+  }
+}
+transactionsMobile.addEventListener('change', () => {
+  const summary = main.querySelector('.transactions-summary');
+  if(summary) syncTransactionsSummary(summary);
+});
+
 function mountTransactions(){
   main.replaceChildren(stitchTemplate('transactions'));
+  const summary = main.querySelector('.transactions-summary');
+  syncTransactionsSummary(summary);
+  summary.addEventListener('keydown', event => {
+    if(!transactionsMobile.matches || !['ArrowLeft','ArrowRight'].includes(event.key)) return;
+    event.preventDefault();
+    const [first, second] = summary.children;
+    const stride = second.offsetLeft - first.offsetLeft;
+    const direction = event.key === 'ArrowRight' ? 1 : -1;
+    summary.scrollLeft = (Math.round(summary.scrollLeft / stride) + direction) * stride;
+  });
+  const filterToggle = main.querySelector('.transactions-filter-toggle');
+  filterToggle.addEventListener('click', () => {
+    filterToggle.setAttribute('aria-expanded', String(filterToggle.getAttribute('aria-expanded') !== 'true'));
+  });
   const notice = main.querySelector('.transactions-notice');
   notice.hidden = !message;
   notice.textContent = message;
@@ -585,7 +624,11 @@ function mountTransactions(){
     query = searchKey(listSearch.value);
     listResults(true);
   });
-  main.querySelectorAll('[data-type]').forEach(button => button.addEventListener('click', () => {
+  const typeFilters = main.querySelector('.transactions-types');
+  typeFilters.addEventListener('focusin', event => {
+    if(transactionsMobile.matches) event.target.scrollIntoView({block:'nearest', inline:'nearest'});
+  });
+  typeFilters.querySelectorAll('[data-type]').forEach(button => button.addEventListener('click', () => {
     if(filters.type === button.dataset.type) return;
     filters.type = button.dataset.type;
     filters.category = '';
