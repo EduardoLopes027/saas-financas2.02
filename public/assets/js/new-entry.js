@@ -21,7 +21,7 @@ const entryIconPaths = {
 };
 const entryIcon = name => '<svg class="entry-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="'+ entryIconPaths[name] +'"/></svg>';
 const blankEntry = () => ({
-  type:'Despesa', amount:'', date:localCalendarDate(), category:'', description:'',
+  type:'Despesa', amount:'0,00', date:localCalendarDate(), category:'', description:'',
   paymentMethod:'', destinationPaymentMethod:'', status:'Pago', notes:'',
   repeat:false, recurrence:'Mensal', split:false, installments:2, receipt:null
 });
@@ -45,7 +45,7 @@ function mountEntry(item = null, origin = null, asSheet = false){
   const baseline = item ? {
     ...blankEntry(),
     editId:item.id, type:item.type, category:item.category, description:item.description, date:item.date,
-    amount:(item.amount / 100).toFixed(2).replace('.',','),
+    amount:formatEntryAmount(item.amount),
     paymentMethod:item.paymentMethod ?? '', destinationPaymentMethod:item.destinationPaymentMethod ?? '',
     status:item.status ?? '', notes:item.notes ?? '', receipt:item.receipt ?? null
   } : blankEntry();
@@ -85,7 +85,7 @@ function mountEntry(item = null, origin = null, asSheet = false){
         <div class="entry-value">
           <div><label for="entry-amount">${sheet ? 'Valor do lançamento' : 'Valor da transação'}</label>
           <div class="entry-amount-line"><span aria-hidden="true">R$</span>
-          <input id="entry-amount" name="amount" inputmode="decimal" maxlength="16" placeholder="0,00"
+          <input id="entry-amount" name="amount" inputmode="numeric"
             aria-label="${sheet ? 'Valor do lançamento em reais' : 'Valor da transação em reais'}" aria-describedby="entry-error-amount" required value="${escape(data.amount)}"></div></div>
           <span class="entry-badge">BRL</span>
           <button type="button" data-entry-clear="amount" aria-label="Limpar valor">${entryIcon('close')}</button>
@@ -187,11 +187,19 @@ function mountEntry(item = null, origin = null, asSheet = false){
   sheet.showModal();
 }
 
+const entryAmountFormat = new Intl.NumberFormat('pt-BR', {
+  minimumFractionDigits:2, maximumFractionDigits:2
+});
+
+function formatEntryAmount(cents){
+  // Pass an exact decimal string so large amounts retain their last cent.
+  const digits = String(cents).padStart(3,'0');
+  return entryAmountFormat.format(digits.slice(0,-2) + '.' + digits.slice(-2));
+}
+
 function parseCents(value){
-  const raw = value.trim().replace(/^R\$\s*/,'');
-  if(!/^(?:\d{1,9}|\d{1,3}(?:\.\d{3}){1,2})(?:,\d{1,2})?$/.test(raw)) return 0;
-  const [whole,decimal=''] = raw.replaceAll('.','').split(',');
-  return Number(whole)*100 + Number(decimal.padEnd(2,'0'));
+  const cents = Number(value.replace(/\D/g,''));
+  return Number.isSafeInteger(cents) ? cents : null;
 }
 
 function entryDateOffset(date, months = 0, days = 0){
@@ -319,6 +327,11 @@ function wireEntry(data,baseline,item,root,origin){
   const element = root.querySelector('.entry-form');
   const field = name => element.elements.namedItem(name);
   const status = element.querySelector('#form-status');
+  const amountInput = field('amount');
+  let maskedAmount = amountInput.value;
+  const moveAmountCaret = () => amountInput.setSelectionRange(amountInput.value.length,amountInput.value.length);
+  amountInput.addEventListener('focus',moveAmountCaret);
+  amountInput.addEventListener('click',moveAmountCaret);
   let receipt = data.receipt;
   let receiptInvalid = false;
   const read = () => ({
@@ -386,6 +399,12 @@ function wireEntry(data,baseline,item,root,origin){
   element.addEventListener('input',event=>{
     const {name} = event.target;
     if(['receipt','kind','repeat','split'].includes(name)) return;
+    if(name === 'amount'){
+      const cents = parseCents(amountInput.value);
+      if(cents !== null) maskedAmount = formatEntryAmount(cents);
+      amountInput.value = maskedAmount;
+      moveAmountCaret();
+    }
     if(element.querySelector('#entry-error-' + name)) error(name,'');
     refresh();
   });
@@ -415,7 +434,12 @@ function wireEntry(data,baseline,item,root,origin){
       field('date').value = entryDateOffset(localCalendarDate(),0,date === 'today' ? 0 : -1);
       error('date','');
     }
-    if(clear === 'amount'){field('amount').value = '';field('amount').focus();error('amount','');}
+    if(clear === 'amount'){
+      amountInput.value = maskedAmount = formatEntryAmount(0);
+      amountInput.focus();
+      moveAmountCaret();
+      error('amount','');
+    }
     if(clear === 'receipt'){receipt = null;receiptInvalid = false;error('receipt','');field('receipt').focus();}
     refresh();
   });

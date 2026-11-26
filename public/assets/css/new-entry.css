@@ -219,7 +219,6 @@ html:has(.entry-sheet[open]) {
 .entry-sheet :is(.entry-intro a, .entry-intro-details, .entry-side),
 .entry-sheet .entry-types legend,
 .entry-sheet .entry-value > .entry-badge,
-.entry-sheet .entry-value > [data-entry-clear="amount"],
 .entry-sheet [data-entry-text="payment-help"] {
   display: none;
 }
@@ -278,12 +277,19 @@ html:has(.entry-sheet[open]) {
 }
 
 .entry-sheet .entry-value {
+  position: relative;
   display: block;
-  padding: 12px 10px;
+  padding: 12px 50px;
   margin: 14px 0;
   border: 1px solid #d9e2ed;
   border-radius: 18px;
   text-align: center;
+}
+
+.entry-sheet .entry-value > [data-entry-clear="amount"] {
+  position: absolute;
+  inset: 50% 4px auto auto;
+  transform: translateY(-50%);
 }
 
 .entry-sheet .entry-value label {
