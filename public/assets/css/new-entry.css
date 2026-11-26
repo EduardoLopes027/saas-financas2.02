@@ -143,3 +143,260 @@
 .transactions-table [data-tone="transfer"] .transactions-category-icon { color:#3730a3; }
 .transactions-table [data-tone="transfer"] .transactions-category-icon { background:#e0e7ff; }
 .transactions-receipt { display:inline-flex; align-items:center; justify-content:center; width:34px; min-height:44px; padding:0; border:0; border-radius:8px; background:transparent; color:#3730a3; vertical-align:middle; }
+
+html:has(.entry-sheet[open]) {
+  overflow: hidden;
+}
+
+.entry-sheet {
+  --entry-indigo: #4f46e5;
+  --entry-soft: #f4f6f9;
+  --entry-muted: #475569;
+  --focus-ring: 2px solid var(--entry-indigo);
+  --focus-offset: 2px;
+  position: fixed;
+  inset: auto 0 var(--entry-viewport-bottom, 0);
+  box-sizing: border-box;
+  width: min(100%, 520px);
+  max-width: none;
+  max-height: min(100dvh, var(--entry-viewport-height, 100dvh));
+  margin: 0 auto;
+  padding: 12px 20px calc(20px + env(safe-area-inset-bottom));
+  border: 0;
+  border-radius: 28px 28px 0 0;
+  box-shadow: 0 -12px 36px rgba(15, 23, 42, .18);
+  overflow: auto;
+  overscroll-behavior: contain;
+  scroll-padding: 14px 0;
+  color: #0b1c30;
+  background: #fff;
+}
+
+.entry-sheet[open] {
+  animation: entry-sheet-slide .18s ease-out;
+}
+
+.entry-sheet::backdrop {
+  background: rgba(15, 23, 42, .4);
+  backdrop-filter: blur(4px);
+}
+
+@keyframes entry-sheet-slide {
+  from { transform: translateY(24px); opacity: .75; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .entry-sheet[open] { animation: none; }
+}
+
+.entry-sheet [hidden] {
+  display: none !important;
+}
+
+.entry-sheet::before {
+  content: "";
+  display: block;
+  width: 46px;
+  height: 5px;
+  margin: 0 auto 12px;
+  border-radius: 999px;
+  background: #dce3ec;
+}
+
+.entry-sheet .entry-intro {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.entry-sheet .entry-intro h1 {
+  margin: 0;
+  font-size: 1.25rem;
+}
+
+.entry-sheet :is(.entry-intro a, .entry-intro-details, .entry-side),
+.entry-sheet .entry-types legend,
+.entry-sheet .entry-value > .entry-badge,
+.entry-sheet .entry-value > [data-entry-clear="amount"],
+.entry-sheet [data-entry-text="payment-help"] {
+  display: none;
+}
+
+.entry-sheet .entry-sheet-close {
+  display: grid;
+  flex: 0 0 44px;
+  place-items: center;
+  min-width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: #eff2f6;
+  color: var(--entry-muted);
+}
+
+.entry-sheet .entry-layout {
+  display: block;
+  --entry-accent: #ef3e5b;
+}
+
+.entry-sheet .entry-form {
+  padding: 0;
+  box-shadow: none;
+}
+
+.entry-sheet .entry-types .entry-segments {
+  padding: 4px;
+  border-radius: 20px;
+  background: #eff2f6;
+}
+
+.entry-sheet .entry-segments label > span {
+  padding: 4px 2px;
+  overflow-wrap: anywhere;
+  font-size: .82rem;
+  font-weight: 650;
+}
+
+.entry-sheet .entry-types .entry-icon {
+  display: none;
+}
+
+.entry-sheet .entry-layout[data-kind="Despesa"] .entry-types input:checked + span {
+  background: #e11d48;
+  color: #fff;
+}
+
+.entry-sheet .entry-layout[data-kind="Receita"] .entry-types input:checked + span {
+  background: #047857;
+}
+
+.entry-sheet .entry-layout[data-kind="Transferência"] .entry-types input:checked + span {
+  background: var(--entry-indigo);
+}
+
+.entry-sheet .entry-value {
+  display: block;
+  padding: 12px 10px;
+  margin: 14px 0;
+  border: 1px solid #d9e2ed;
+  border-radius: 18px;
+  text-align: center;
+}
+
+.entry-sheet .entry-value label {
+  font-size: .73rem;
+}
+
+.entry-sheet .entry-amount-line {
+  justify-content: center;
+  color: var(--entry-tone);
+}
+
+.entry-sheet .entry-amount-line input {
+  field-sizing: content;
+  width: auto;
+  min-width: 3.5ch;
+  max-width: calc(100% - 40px);
+  font-size: 1.75rem;
+}
+
+.entry-sheet .entry-amount-line input::placeholder {
+  color: inherit;
+}
+
+.entry-sheet .entry-fields {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 12px;
+}
+
+.entry-sheet :is([data-field="description"], [data-field="destinationPaymentMethod"]) {
+  grid-column: 1 / -1;
+}
+
+.entry-sheet .entry-fields > * {
+  min-width: 0;
+}
+
+.entry-sheet .entry-fields :is(label > span:first-child, legend) {
+  font-size: .76rem;
+  color: var(--entry-muted);
+}
+
+.entry-sheet .entry-field > span:first-child {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.entry-sheet .entry-field > span:first-child .entry-icon {
+  width: 15px;
+  height: 15px;
+}
+
+.entry-sheet .entry-field :is(input, select) {
+  min-height: 44px;
+  padding: 7px 10px;
+  font-size: .88rem;
+  border-color: #aab8ca;
+  border-radius: 16px;
+}
+
+.entry-sheet .entry-field [aria-invalid="true"] {
+  border-color: #9f1239;
+}
+
+.entry-sheet .entry-sheet-status .entry-segments {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  padding: 2px;
+  border-radius: 16px;
+}
+
+.entry-sheet .entry-sheet-status .entry-segments:has(input[value=""]) {
+  grid-template-columns: 1fr;
+}
+
+.entry-sheet .entry-sheet-status input[value="Pago"]:checked + span {
+  background: #047857;
+}
+
+.entry-sheet .entry-sheet-status input[value="Pendente"]:checked + span {
+  background: #475569;
+}
+
+.entry-sheet .entry-more {
+  margin-top: 8px;
+}
+
+.entry-sheet .entry-more summary {
+  min-height: 44px;
+  padding-block: 11px;
+  border-radius: 12px;
+  color: var(--entry-muted);
+  cursor: pointer;
+}
+
+.entry-sheet :is(.entry-scheduling, .entry-receipt, .entry-actions) {
+  margin-top: 10px;
+}
+
+.entry-sheet .entry-form > .entry-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.entry-sheet .entry-form > .entry-actions .entry-primary {
+  grid-area: 1 / 1 / 2 / -1;
+  min-height: 48px;
+}
+
+.entry-sheet .entry-form > .entry-actions [value="another"] {
+  grid-column: 2;
+  font-size: .85rem;
+}
+
+@media (max-width: 340px) {
+  .entry-sheet .entry-fields { grid-template-columns: minmax(0, 1fr); }
+}

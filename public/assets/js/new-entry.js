@@ -10,6 +10,9 @@ const entryIconPaths = {
   arrow_upward:'M12 19V5m-7 7 7-7 7 7',
   swap_horiz:'M3 7h17m-4-4 4 4-4 4M21 17H4m4-4-4 4 4 4',
   close:'m6 6 12 12M6 18 18 6',
+  tag:'M3 4h8l10 10-7 7L3 10Zm4 4h.01',
+  payment:'M3 5h18v14H3Zm0 5h18M7 15h3',
+  calendar:'M4 6h16v15H4Zm0 5h16M8 3v5m8-5v5',
   check:'m4 12 5 5L20 6',
   info:'M12 11v5m0-8h.01M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0Z',
   cloud_upload:'M7 18H6a4 4 0 1 1 1.2-7.8 6 6 0 0 1 11.5 1.2A3.5 3.5 0 0 1 18 18h-1m-5 2v-8m-3 3 3-3 3 3',
@@ -29,7 +32,16 @@ const entrySelect = (name, values, selected, placeholder = 'Selecione') =>
   '<select name="' + name + '" aria-describedby="entry-error-' + name + '">'
   + (placeholder ? '<option value="">' + placeholder + '</option>' : '') + options(values,selected) + '</select>';
 
-function mountEntry(item = null){
+function entrySheetStatus(status,item){
+  const statuses = item && !item.status ? ['',...transactionStatuses] : transactionStatuses;
+  return '<fieldset class="entry-sheet-status"><legend>Status</legend><div class="entry-segments">' + statuses.map(value =>
+    '<label><input type="radio" name="status" value="' + value + '"' + (status === value ? ' checked' : '') + '><span>' + (value || 'Não informado') + '</span></label>'
+  ).join('') + '</div></fieldset>';
+}
+
+let entryEditor = null;
+
+function mountEntry(item = null, origin = null, asSheet = false){
   const baseline = item ? {
     ...blankEntry(),
     editId:item.id, type:item.type, category:item.category, description:item.description, date:item.date,
@@ -38,10 +50,26 @@ function mountEntry(item = null){
     status:item.status ?? '', notes:item.notes ?? '', receipt:item.receipt ?? null
   } : blankEntry();
   const data = draft && draft.editId === baseline.editId ? draft : baseline;
-  main.innerHTML = `
+  const sheet = asSheet ? document.createElement('dialog') : null;
+  if(sheet){
+    sheet.className = 'entry-sheet';
+    sheet.setAttribute('aria-labelledby','entry-sheet-title');
+    main.append(sheet);
+  }
+  const root = sheet ?? main;
+  const mobileLabel = (label, icon) => sheet ? entryIcon(icon) + label : label;
+  const dateShortcuts = `<div class="entry-shortcuts" aria-label="Atalhos de data">
+            <button type="button" data-entry-date="today">Hoje</button>
+            <button type="button" data-entry-date="yesterday">Ontem</button>
+            <button type="button" data-entry-date="other">Outra data</button>
+          </div>`;
+  const dateField = `<div class="entry-date-field">${entryField('date',mobileLabel('Data do lançamento *','calendar'),'<input name="date" type="date" min="0001-01-01" max="9999-12-31" required aria-describedby="entry-error-date" value="' + escape(data.date) + '">')}${sheet ? '' : dateShortcuts}</div>`;
+  const primaryAction = `<button type="submit" value="list" class="entry-primary">${entryIcon('check')} ${item ? 'Salvar alterações' : 'Salvar Lançamento'}</button>`;
+  root.innerHTML = `
     <div class="entry-intro">
       <a data-entry-back href="#lancamentos">${entryIcon('arrow_back')} Voltar para Lançamentos</a>
-      <h1 tabindex="-1">${item ? 'Editar lançamento' : 'Novo Lançamento'}</h1>
+      <h1 tabindex="-1"${sheet ? ' id="entry-sheet-title" autofocus' : ''}>${item ? 'Editar lançamento' : 'Novo Lançamento'}</h1>
+      ${sheet ? '<button class="entry-sheet-close" type="button" data-entry-back aria-label="Fechar">' + entryIcon('close') + '</button>' : ''}
       <div class="entry-intro-details"><p>${item ? 'Altere os dados do lançamento selecionado e confira o impacto no saldo.' : 'Registre uma receita, despesa ou transferência e acompanhe o impacto no seu saldo.'}</p>
       <span class="entry-badge">Sincronização bancária indisponível</span></div>
     </div>
@@ -55,28 +83,25 @@ function mountEntry(item = null){
              + '><span>' + entryIcon(icon) + kind + '</span></label>').join('')}</div>
         </fieldset>
         <div class="entry-value">
-          <div><label for="entry-amount">Valor da transação</label>
+          <div><label for="entry-amount">${sheet ? 'Valor do lançamento' : 'Valor da transação'}</label>
           <div class="entry-amount-line"><span aria-hidden="true">R$</span>
           <input id="entry-amount" name="amount" inputmode="decimal" maxlength="16" placeholder="0,00"
-            aria-label="Valor da transação em reais" aria-describedby="entry-error-amount" required value="${escape(data.amount)}"></div></div>
+            aria-label="${sheet ? 'Valor do lançamento em reais' : 'Valor da transação em reais'}" aria-describedby="entry-error-amount" required value="${escape(data.amount)}"></div></div>
           <span class="entry-badge">BRL</span>
           <button type="button" data-entry-clear="amount" aria-label="Limpar valor">${entryIcon('close')}</button>
           <span class="field-error" id="entry-error-amount"></span>
         </div>
         <div class="entry-fields">
-          ${entryField('description','Descrição *','<input name="description" maxlength="80" required aria-describedby="entry-error-description" placeholder="Ex.: Supermercado" value="' + escape(data.description) + '">')}
-          ${entryField('category','Categoria *',entrySelect('category',categories[data.type],data.category))}
-          <div>${entryField('date','Data do lançamento *','<input name="date" type="date" min="0001-01-01" max="9999-12-31" required aria-describedby="entry-error-date" value="' + escape(data.date) + '">')}
-          <div class="entry-shortcuts" aria-label="Atalhos de data">
-            <button type="button" data-entry-date="today">Hoje</button>
-            <button type="button" data-entry-date="yesterday">Ontem</button>
-            <button type="button" data-entry-date="other">Outra data</button>
-          </div></div>
-          <div>${entryField('paymentMethod',item && !item.paymentMethod && data.type !== 'Transferência' ? 'Conta / meio de pagamento' : 'Conta / meio de pagamento *',entrySelect('paymentMethod',paymentMethods,data.paymentMethod))}
+          ${entryField('description','Descrição *','<input name="description" maxlength="80" required aria-describedby="entry-error-description" placeholder="' + (sheet ? 'Descrição (ex: Supermercado, Salário…)' : 'Ex.: Supermercado') + '" value="' + escape(data.description) + '">')}
+          ${entryField('category',mobileLabel('Categoria *','tag'),entrySelect('category',categories[data.type],data.category))}
+          ${sheet ? '' : dateField}
+          <div class="entry-payment-field">${entryField('paymentMethod',sheet ? mobileLabel('<span data-entry-payment-label></span>','payment') : item && !item.paymentMethod && data.type !== 'Transferência' ? 'Conta / meio de pagamento' : 'Conta / meio de pagamento *',entrySelect('paymentMethod',paymentMethods,data.paymentMethod))}
           <small data-entry-text="payment-help"></small></div>
           ${entryField('destinationPaymentMethod','Conta / meio de destino *',entrySelect('destinationPaymentMethod',paymentMethods,data.destinationPaymentMethod))}
-          ${entryField('status','Status',entrySelect('status',transactionStatuses,data.status,item && !item.status ? 'Não informado' : ''))}
+          ${sheet ? dateField : ''}
+          ${sheet ? entrySheetStatus(data.status,item) : entryField('status','Status',entrySelect('status',transactionStatuses,data.status,item && !item.status ? 'Não informado' : ''))}
         </div>
+        ${sheet ? '<details class="entry-more"><summary>Mais opções</summary>' + dateShortcuts : ''}
         <div class="entry-scheduling"${item ? ' hidden' : ''}>
           <div><label class="entry-toggle"><input type="checkbox" role="switch" name="repeat"${data.repeat ? ' checked' : ''}>
           <span>Lançamento recorrente<small>Repete o lançamento no intervalo escolhido.</small></span></label>
@@ -98,12 +123,14 @@ function mountEntry(item = null){
           <div class="entry-receipt-selected" hidden><span data-entry-text="receipt"></span><button type="button" data-entry-clear="receipt">Remover</button></div>
           <span class="field-error" id="entry-error-receipt" role="alert"></span>
         </div>
+        ${sheet ? '</details>' : ''}
         </fieldset>
         <div class="entry-feedback" id="form-status" role="alert"></div>
         <div class="entry-actions">
+          ${sheet ? primaryAction : ''}
           <a data-entry-back href="#lancamentos" id="cancel">Cancelar</a>
           ${item ? '' : '<button type="submit" value="another">Salvar e Criar Outro</button>'}
-          <button type="submit" value="list" class="entry-primary">${entryIcon('check')} ${item ? 'Salvar alterações' : 'Salvar Lançamento'}</button>
+          ${sheet ? '' : primaryAction}
         </div>
       </form>
       <aside class="entry-side" aria-label="Prévia e impacto">
@@ -135,7 +162,29 @@ function mountEntry(item = null){
     <div class="entry-toast" role="status"></div>
     <dialog class="entry-dialog"><form method="dialog"><h2>Descartar alterações?</h2><p>Os dados que você digitou neste lançamento serão perdidos.</p>
       <div class="entry-actions"><button value="keep">Continuar editando</button><button class="entry-primary" value="discard">Descartar</button></div></form></dialog>`;
-  wireEntry(data,baseline,item);
+  const editor = wireEntry(data,baseline,item,root,origin);
+  if(origin) entryEditor = {...editor,origin,route:location.hash,state:history.state};
+  if(!sheet) return;
+  const viewport = window.visualViewport;
+  const listeners = new AbortController();
+  const syncViewport = () => {
+    if(!viewport) return;
+    sheet.style.setProperty('--entry-viewport-height', viewport.height + 'px');
+    sheet.style.setProperty('--entry-viewport-bottom', Math.max(0,window.innerHeight - viewport.height - viewport.offsetTop) + 'px');
+  };
+  syncViewport();
+  for(const event of ['resize','scroll']) viewport?.addEventListener(event,syncViewport,{signal:listeners.signal});
+  window.addEventListener('beforeunload',event=>{
+    if(!saveBusy && !editor.hasChanges()) return;
+    event.preventDefault();
+    event.returnValue = '';
+  },{signal:listeners.signal});
+  sheet.addEventListener('cancel',event=>{event.preventDefault();editor.requestClose();});
+  entryEditor.cleanup = () => {
+    listeners.abort();
+    sheet.close();
+  };
+  sheet.showModal();
 }
 
 function parseCents(value){
@@ -266,8 +315,8 @@ function updateEntryPreview(element,data,cents,item){
   main.querySelector('.entry-curve polyline').setAttribute('points',points);
 }
 
-function wireEntry(data,baseline,item){
-  const element = main.querySelector('.entry-form');
+function wireEntry(data,baseline,item,root,origin){
+  const element = root.querySelector('.entry-form');
   const field = name => element.elements.namedItem(name);
   const status = element.querySelector('#form-status');
   let receipt = data.receipt;
@@ -289,6 +338,8 @@ function wireEntry(data,baseline,item){
     draft = read();
     const cents = parseCents(draft.amount);
     const transfer = draft.type === 'Transferência';
+    const paymentLabel = element.querySelector('[data-entry-payment-label]');
+    if(paymentLabel) paymentLabel.textContent = transfer ? 'Origem' : 'Pagamento';
     const destination = field('destinationPaymentMethod');
     destination.disabled = !transfer;
     destination.required = transfer;
@@ -376,18 +427,26 @@ function wireEntry(data,baseline,item){
     delete dropzone.dataset.dragging;
     if(!saveBusy) chooseReceipt(event.dataTransfer.files);
   });
-  const dialog = main.querySelector('.entry-dialog');
-  main.querySelectorAll('[data-entry-back]').forEach(link=>link.addEventListener('click',event=>{
-    if(saveBusy){event.preventDefault();return;}
-    if(Object.entries(read()).every(([key,value]) => value === baseline[key])){draft = null;return;}
+  const dialog = root.querySelector('.entry-dialog');
+  const hasChanges = () => Object.entries(read()).some(([key,value]) => value !== baseline[key]);
+  const leave = () => {
+    draft = null;
+    if(origin) finishMobileEntry(origin);
+    else location.hash = 'lancamentos';
+  };
+  const requestClose = () => {
+    if(saveBusy || dialog.open) return;
+    if(hasChanges()){
+      dialog.returnValue = '';
+      dialog.showModal();
+    }else leave();
+  };
+  root.querySelectorAll('[data-entry-back]').forEach(control=>control.addEventListener('click',event=>{
     event.preventDefault();
-    dialog.returnValue = '';
-    dialog.showModal();
+    requestClose();
   }));
   dialog.addEventListener('close',()=>{
-    if(dialog.returnValue !== 'discard') return;
-    draft = null;
-    location.hash = 'lancamentos';
+    if(dialog.returnValue === 'discard') leave();
   });
   element.addEventListener('submit',async event=>{
     event.preventDefault();
@@ -412,7 +471,13 @@ function wireEntry(data,baseline,item){
     status.textContent = '';
     Object.entries(errors).forEach(([name,value])=>error(name,value));
     const invalid = Object.keys(errors).find(name=>errors[name]);
-    if(invalid){field(invalid).focus();return;}
+    if(invalid){
+      const control = field(invalid);
+      const options = control.closest('.entry-more');
+      if(options) options.open = true;
+      control.focus();
+      return;
+    }
     if(appMode === 'demo' && ['save','load'].includes(scenario.value)){
       status.textContent = 'Não foi possível salvar. Troque o cenário para Dados fictícios e tente novamente.';
       return;
@@ -472,6 +537,14 @@ function wireEntry(data,baseline,item){
         if(scenario.value === 'empty'){entries = [];scenario.value = 'normal';}
         entries.push(...demoBatch(record,receipt));
       }
+      if(root.matches('.entry-sheet') && !keepEditing && !matchMedia('(prefers-reduced-motion: reduce)').matches){
+        const exit = root.animate(
+          [{transform:'translateY(0)'},{transform:'translateY(24px)',opacity:0}],
+          {duration:150,easing:'ease-in',fill:'forwards'}
+        );
+        await exit.finished.catch(() => {});
+        if(epoch !== accountEpoch) return;
+      }
     }catch(error){
       if(epoch !== accountEpoch) return;
       if(error.status === 401){expireAccount();return;}
@@ -489,7 +562,7 @@ function wireEntry(data,baseline,item){
       }
     }
     draft = null;
-    if(!item || item.date.slice(0,7) !== record.date.slice(0,7)){
+    if(!origin && (!item || item.date.slice(0,7) !== record.date.slice(0,7))){
       search.value = '';
       query = '';
       selectedMonth = record.date.slice(0,7);
@@ -498,18 +571,21 @@ function wireEntry(data,baseline,item){
     const notice = item ? 'Lançamento atualizado.' : refreshed ? 'Lançamento salvo.' : 'Lançamento salvo. Atualize o Extrato para consultar todos os registros.';
     if(location.hash !== (item ? '#editar/'+item.id : '#novo')){message = notice;render(false);return;}
     if(keepEditing){
-      mountEntry();
+      render(false);
       main.querySelector('#entry-amount').focus({preventScroll:true});
       requestAnimationFrame(()=>{
         const toast = main.querySelector('.entry-toast');
         if(toast) toast.textContent = notice;
       });
+    }else if(origin){
+      finishMobileEntry(origin,notice);
     }else{
       message = notice;
       location.hash = 'lancamentos';
     }
   });
   refresh();
+  return {hasChanges,requestClose};
 }
 
 

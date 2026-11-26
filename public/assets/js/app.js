@@ -1010,12 +1010,74 @@ async function submitAccount(event, register){
   }
 }
 
+let pendingEntryReturn = null;
+
+function entryLinks(route){
+  return [...main.querySelectorAll('a[href="' + route + '"]')];
+}
+
+function restoreEntryOrigin(){
+  const {origin,notice} = pendingEntryReturn;
+  pendingEntryReturn = null;
+  render(false);
+  const filterToggle = main.querySelector('.transactions-filter-toggle');
+  if(filterToggle && origin.filtersExpanded) filterToggle.setAttribute('aria-expanded','true');
+  if(notice && origin.hash === '#painel'){
+    const toast = document.createElement('p');
+    toast.className = 'entry-toast';
+    toast.setAttribute('role','status');
+    main.append(toast);
+    requestAnimationFrame(() => {toast.textContent = notice;});
+    setTimeout(() => toast.remove(),4000);
+  }
+  requestAnimationFrame(() => {
+    if((location.hash || '#painel') !== origin.hash) return;
+    window.scrollTo(0,origin.scroll ?? 0);
+    const target = entryLinks(origin.route)[origin.trigger] ?? main.querySelector('.transactions-add, .stitch-add, h1');
+    target?.focus({preventScroll:true});
+  });
+}
+
+function finishMobileEntry(origin, notice = ''){
+  pendingEntryReturn = {origin,notice};
+  if(origin.hash === '#lancamentos') message = notice;
+  if(history.state?.finflowEntry?.route === location.hash){
+    history.back();
+  }else{
+    history.replaceState(history.state,'',origin.hash);
+    restoreEntryOrigin();
+  }
+}
+
+main.addEventListener('click',event=>{
+  const trigger = event.target.closest('a[href]');
+  if(!trigger || !transactionsMobile.matches || entryRoute() || event.defaultPrevented || event.button !== 0
+    || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || trigger.target || trigger.hasAttribute('download')) return;
+  const route = trigger.hash;
+  if(route !== '#novo' && !/^#editar\/\d+$/.test(route)) return;
+  event.preventDefault();
+  const hash = document.body.classList.contains('transactions-view') ? '#lancamentos' : '#painel';
+  const origin = {hash,route,trigger:entryLinks(route).indexOf(trigger),scroll:window.scrollY,
+    filtersExpanded:main.querySelector('.transactions-filter-toggle')?.getAttribute('aria-expanded') === 'true'};
+  history.pushState({...history.state,finflowEntry:origin},'',route);
+  render(true);
+});
+
 function render(focus){
+  entryEditor?.cleanup?.();
+  entryEditor = null;
   const authPreview=appMode==='demo'&&(location.hash==='#login'||location.hash==='#cadastro');
   updateAccountChrome(authPreview);
-  const listRoute=location.hash==='#lancamentos' && !authPreview && (appMode==='demo'||accountUser);
+  const savedOrigin = entryRoute() && history.state?.finflowEntry?.route === location.hash ? history.state.finflowEntry : null;
+  const editId = editIdFromRoute();
+  const item = editId === null ? null : records().find(record=>record.id === editId);
+  const ready = appMode === 'demo' || accountUser && accountState === 'ready';
+  const showSheet = Boolean(ready && !authPreview && entryRoute() && transactionsMobile.matches && (editId === null || item));
+  const origin = savedOrigin ?? (showSheet ? {hash:'#lancamentos', route:location.hash} : null);
+  const visibleRoute = showSheet ? origin.hash : location.hash;
+  const listRoute = visibleRoute === '#lancamentos' && !authPreview && (appMode === 'demo' || accountUser);
   document.body.classList.toggle('transactions-view',!!listRoute);
-  document.body.classList.toggle('entry-view',entryRoute() && (appMode==='demo' || accountUser && accountState==='ready'));
+  document.body.classList.toggle('entry-view',Boolean(entryRoute() && ready && !showSheet));
   if(authPreview||(appMode!=='demo'&&!accountUser)){
     document.body.classList.remove('home-view');
     renderAccountGate(focus,authPreview);
@@ -1028,7 +1090,7 @@ function render(focus){
     if(focus) main.querySelector('h1').focus();
     return;
   }
-  const view=entryRoute() ? 'novo' : location.hash==='#lancamentos' ? 'lancamentos' : 'painel';
+  const view = entryRoute() && !showSheet ? 'novo' : visibleRoute === '#lancamentos' ? 'lancamentos' : 'painel';
   document.body.classList.toggle('home-view', view === 'painel');
   document.querySelectorAll('nav a').forEach(a=>{
     if(a.hash==='#'+(view==='novo'?'lancamentos':view)) a.setAttribute('aria-current','page');else a.removeAttribute('aria-current');
@@ -1041,14 +1103,17 @@ function render(focus){
     main.insertAdjacentHTML('beforeend','<section class="card state-card"><p class="error" role="alert">Não foi possível carregar os dados.</p><button id="retry">Tentar novamente</button></section>');
     document.querySelector('#retry').onclick=()=>{scenario.value='normal';render(true);};
   }else if(view==='novo'){
-    const editId = editIdFromRoute();
-    const item = editId === null ? null : records().find(record=>record.id === editId);
     if(editId !== null && !item){
       main.innerHTML='<section class="card state-card"><h1 tabindex="-1">Lançamento indisponível</h1><p>Este lançamento não está disponível para edição.</p><a href="#lancamentos">Voltar para Lançamentos</a></section>';
-    }else mountEntry(item);
+    }else mountEntry(item,origin);
   }
   else if(view==='lancamentos') mountTransactions();
-  if(focus) main.querySelector('h1').focus();
+  if(showSheet){
+    const filterToggle = main.querySelector('.transactions-filter-toggle');
+    if(filterToggle && origin.filtersExpanded) filterToggle.setAttribute('aria-expanded','true');
+    window.scrollTo(0,origin.scroll ?? 0);
+    mountEntry(item,origin,true);
+  }else if(focus) main.querySelector('h1').focus();
 }
 document.querySelector('#transaction-search').addEventListener('submit',event=>{
   event.preventDefault();
@@ -1105,8 +1170,21 @@ scenario.addEventListener('change',()=>{
   if(entryRoute() && saveBusy) return;
   render(false);
 });
+transactionsMobile.addEventListener('change',()=>{
+  if(entryRoute() && !saveBusy) render(true);
+});
 window.addEventListener('hashchange',()=>{
-  render(true);
+  if(entryEditor && entryEditor.route !== location.hash && !pendingEntryReturn){
+    if(saveBusy || entryEditor.hasChanges()){
+      history.pushState(entryEditor.state,'',entryEditor.route);
+      entryEditor.requestClose();
+      return;
+    }
+    draft = null;
+    if((location.hash || '#painel') === entryEditor.origin.hash) pendingEntryReturn = {origin:entryEditor.origin};
+  }
+  if(pendingEntryReturn) restoreEntryOrigin();
+  else render(true);
   if(pendingSpending){
     pendingSpending=false;
     showMobileSpending();
@@ -1147,7 +1225,7 @@ accountChannel?.addEventListener('message',event=>{
 });
 document.addEventListener('visibilitychange',()=>{
   if(document.visibilityState!=='visible') return;
-  if(accountUser&&!authBusy&&!saveBusy&&!deletingTransactionIds.size&&accountState==='ready') restoreAccount();
+  if(accountUser&&!authBusy&&!saveBusy&&!entryEditor&&!deletingTransactionIds.size&&accountState==='ready') restoreAccount();
   else refreshHomeDate();
 });
 if(appMode==='checking') restoreAccount();
