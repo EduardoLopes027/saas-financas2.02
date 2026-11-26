@@ -599,3 +599,95 @@ input,select,button,.nav{border-color:#85829c;color:var(--home-ink)}
 [data-theme=dark] .entry-form :is(.entry-amount-line input, input:not([type=radio]), select, textarea) {
   color: #f8fafc;
 }
+
+.settings-content {
+  --settings-field: #f8fafc;
+  --settings-field-edge: #e2e8f0;
+  --settings-field-readonly: #f1f5f9;
+  --settings-focus: #4338ca;
+  --settings-rose: #fff1f2;
+  --settings-rose-badge: #ffe4e6;
+  --settings-rose-outline: #be123c;
+}
+.settings-content :is(button, input, select, a):focus-visible,
+.settings-content .settings-theme input:focus-visible + span {
+  outline: 2px solid var(--settings-focus);
+  outline-offset: 3px;
+}
+.settings-fields :is(input:not([type=checkbox]), select) {
+  background: var(--settings-field);
+  border: 1px solid var(--settings-field-edge);
+  border-radius: 12px;
+  padding: 10px 16px;
+}
+.settings-fields :is(input:not([readonly]), select):focus {
+  border-color: var(--settings-focus);
+  background: var(--settings-surface);
+}
+.settings-fields input[readonly] {
+  background: var(--settings-field-readonly);
+  color: var(--home-muted);
+}
+.settings-email-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.settings-email-label .settings-verified {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  background: transparent;
+  color: #047857;
+  white-space: nowrap;
+}
+.settings-service-logo {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: white;
+}
+.settings-service-copy { flex: 1 1 12ch; }
+.settings-service-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.settings-service-actions .settings-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.settings-danger { background: var(--settings-rose); }
+.settings-warning {
+  display: inline-grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  margin-inline-end: 4px;
+  border-radius: 50%;
+  background: var(--settings-rose-badge);
+}
+.settings-danger button {
+  background: transparent;
+  border-color: var(--settings-rose-outline);
+}
+.settings-content .settings-toast {
+  padding: 9px 14px;
+  font-size: .9rem;
+}
+.settings-content .settings-toast:empty { padding: 0; }
+[data-theme=dark] .settings-content {
+  --settings-field: #253247;
+  --settings-field-edge: #475569;
+  --settings-field-readonly: #1a2537;
+  --settings-focus: #a5b4fc;
+  --settings-rose: #391f2e;
+  --settings-rose-badge: #582638;
+  --settings-rose-outline: #fda4af;
+}
+[data-theme=dark] .settings-verified { color: #86efac; }
+@media (prefers-reduced-motion: reduce) {
+  .settings-content, .settings-content * { scroll-behavior: auto; }
+}

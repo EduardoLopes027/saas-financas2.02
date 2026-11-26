@@ -781,6 +781,7 @@ function requireTransaction(item){
 
 function forgetAccount(){
   accountEpoch++;
+  preferenceState=null;
   accountUser=null;
   accountState='idle';
   entries=[];
@@ -878,6 +879,12 @@ async function restoreAccount(){
 
 async function logout(){
   if(authBusy || settingsWriting) return;
+  const state = preferenceState;
+  if(state){
+    await (state.saving ?? drainPreferences(state));
+    if(preferenceState !== state) return;
+  }
+  if(authBusy || settingsWriting) return;
   suspendedDraft=null;
   forgetAccount();
   const epoch=accountEpoch;
@@ -899,6 +906,90 @@ async function logout(){
 }
 
 let settingsWriting = false;
+let preferenceState = null;
+let settingsToastTimer;
+
+function settingsPreferenceState(){
+  if(!accountUser) return null;
+  if(!preferenceState){
+    preferenceState = {owner:accountUser.id, epoch:accountEpoch, pending:{}, inFlight:{}, saving:null, failed:false};
+  }
+  return preferenceState;
+}
+
+function showSettingsToast(text){
+  const toast = main.querySelector('.settings-toast');
+  if(!toast) return;
+  clearTimeout(settingsToastTimer);
+  toast.textContent=text;
+  settingsToastTimer=setTimeout(()=>{toast.textContent='';},2800);
+}
+
+function showPreferenceStatus(state){
+  const form = main.querySelector('#settings-preferences-form');
+  if(!form || preferenceState !== state) return;
+  const retry = form.querySelector('[data-preference-retry]');
+  const feedback = form.querySelector('.settings-feedback');
+  const wasRetryFocused = document.activeElement === retry;
+  retry.hidden = !state.failed;
+  const error = state.failed ? 'Não foi possível salvar as preferências. Suas alterações foram mantidas para tentar novamente.' : '';
+  if(feedback.textContent !== error) feedback.textContent=error;
+  form.setAttribute('aria-busy',String(Boolean(state.saving && !state.failed)));
+  if(wasRetryFocused && retry.hidden) form.querySelector('input:checked, select')?.focus({preventScroll:true});
+}
+
+function applySettingsProfile(updated){
+  accountUser = updated;
+  if(!Object.hasOwn(preferenceState?.pending ?? {},'theme')) updateAccountChrome(false);
+  const stamp = main.querySelector('[data-settings-sync]');
+  if(stamp){
+    stamp.textContent=accountDate(updated.updatedAt,{dateStyle:'short',timeStyle:'short'});
+    stamp.parentElement.hidden=!stamp.textContent;
+  }
+}
+
+async function handleSettingsSessionError(error){
+  if(error.status === 401){expireAccount();return true;}
+  if(error.status === 409){
+    await restoreAccount();
+    showSettingsToast('A sessão mudou. Confira qual conta está aberta.');
+    return true;
+  }
+  return false;
+}
+
+function drainPreferences(state){
+  if(!state || preferenceState !== state) return;
+  if(settingsWriting || state.failed || state.saving || !Object.keys(state.pending).length) return state.saving;
+  state.saving = (async()=>{
+    while(preferenceState === state && !settingsWriting && Object.keys(state.pending).length){
+      const patch = state.pending;
+      state.pending = {};
+      state.inFlight = patch;
+      try{
+        const updated = requireAccountUser(await apiRequest('/api/auth/profile',{...patch,expectedUserId:state.owner},'PATCH'));
+        if(accountEpoch !== state.epoch) return;
+        if(updated.id !== state.owner) throw new Error('Invalid account response');
+        applySettingsProfile(updated);
+        if(!Object.keys(state.pending).length) showSettingsToast('Preferências salvas.');
+      }catch(error){
+        if(accountEpoch !== state.epoch || await handleSettingsSessionError(error)) return;
+        state.pending = {...patch,...state.pending};
+        state.failed = true;
+        updateAccountChrome(false);
+        return;
+      }finally{
+        state.inFlight = {};
+      }
+    }
+  })().finally(()=>{
+    state.saving = null;
+    showPreferenceStatus(state);
+  });
+  showPreferenceStatus(state);
+  return state.saving;
+}
+
 
 function accountName(){
   return accountUser?.displayName || accountUser?.full_name || accountUser?.name
@@ -923,6 +1014,8 @@ function formatAccountPhone(value){
 
 function mountSettings(focus){
   const user = accountUser;
+  const state = settingsPreferenceState();
+  const preferences = {...user,...state?.inFlight,...state?.pending};
   const name = accountName();
   const locked = user ? '' : 'disabled';
   const checked = value => value ? ' checked' : '';
@@ -935,10 +1028,8 @@ function mountSettings(focus){
     "badge": "M8 7V4h8v3 M5 7h14a2 2 0 0 1 2 2v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a2 2 0 0 1 2-2Z M7 15h4m3-3h3m-3 4h3 M9 12h.01",
     "check": "m5 12 4 4L19 6",
     "link": "M10 13a4 4 0 0 0 6 0l3-3a4 4 0 0 0-6-6l-2 2m3 5a4 4 0 0 0-6 0l-3 3a4 4 0 0 0 6 6l2-2",
-    "account_circle": "M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20Zm0-9a3 3 0 1 0 0-6 3 3 0 0 0 0 6Zm-6 6c0-3 2-4 6-4s6 1 6 4",
     "account_balance": "m3 9 9-5 9 5H3Zm2 11h14M7 12v5m5-5v5m5-5v5",
     "tune": "M4 6h16M4 12h16M4 18h16M8 4v4m8 2v4m-6 2v4",
-    "notifications": "M5 17h14l-2-4V9a5 5 0 0 0-10 0v4l-2 4Zm5 3h4",
     "warning": "M12 4 3 20h18L12 4Zm0 6v4m0 3h.01"
   };
   const icon = name => '<svg class="settings-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="'+paths[name]+'"/></svg>';
@@ -953,8 +1044,7 @@ function mountSettings(focus){
       <nav class="settings-pills" aria-label="Seções de configurações">
         <button type="button" data-settings-target="settings-profile" aria-current="location">Perfil</button>
         <button type="button" data-settings-target="settings-preferences">Preferências Financeiras</button>
-        <button type="button" data-settings-target="settings-security">Segurança e Login</button>
-        <button type="button" data-settings-target="settings-notifications">Notificações</button>
+        <button type="button" data-settings-target="settings-security">Segurança &amp; Login</button>
       </nav>
       ${user ? '' : '<p class="settings-demo">Demonstração com dados fictícios. Entre em uma conta para alterar configurações.</p>'}
       <section class="settings-card" aria-labelledby="settings-profile">
@@ -970,7 +1060,7 @@ function mountSettings(focus){
           <fieldset ${locked}>
             <div class="settings-fields">
               <label>Nome completo<input name="displayName" autocomplete="name" required maxlength="100" value="${escape(name)}"></label>
-              <label>E-mail ${user?.emailVerified === true ? '<span class="settings-verified">Verificado</span>' : ''}
+              <label><span class="settings-email-label">E-mail ${user?.emailVerified === true ? '<span class="settings-verified">'+icon('check')+' Verificado</span>' : ''} </span>
                 <input name="email" type="email" autocomplete="email" readonly value="${escape(user?.email ?? '')}"></label>
               <label>Telefone / WhatsApp (opcional)<input name="phone" type="tel" autocomplete="tel" maxlength="32" value="${escape(formatAccountPhone(user?.phone ?? ''))}"></label>
               <div><label for="settings-payday-rule">Recebimento do salário</label>
@@ -991,9 +1081,9 @@ function mountSettings(focus){
       <section class="settings-card" aria-labelledby="settings-security">
         <h2 id="settings-security" tabindex="-1">${icon('link')} Contas Conectadas</h2>
         <p>Serviços vinculados para acesso à sua conta.</p>
-        <div class="settings-service">${icon('account_circle')}
-          <div><strong>Conta Google</strong><small>${user?.googleLinked ? escape(user.googleEmail || 'Conectada') : user?.googleAvailable ? 'Disponível para vincular' : 'Indisponível no momento'}</small></div>
-          ${user?.googleLinked ? '<a href="https://myaccount.google.com/connections" target="_blank" rel="noopener noreferrer">Gerenciar</a>'
+        <div class="settings-service"><span class="settings-service-logo"><img width="22" height="22" alt="" src="data:image/png;base64,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"></span>
+          <div class="settings-service-copy"><strong>Conta Google</strong><small>${user?.googleLinked ? escape(user.googleEmail || 'Conectada') : user?.googleAvailable ? 'Disponível para vincular' : 'Indisponível no momento'}</small></div>
+          ${user?.googleLinked ? '<div class="settings-service-actions"><span class="settings-status">'+icon('check')+' Conectado</span><a href="https://myaccount.google.com/connections" target="_blank" rel="noopener noreferrer">Gerenciar</a></div>'
             : '<button type="button" data-settings-google '+(user?.googleAvailable ? '' : 'disabled')+'>Vincular</button>'}
         </div>
         <p data-settings-google-status role="status"></p>
@@ -1011,33 +1101,29 @@ function mountSettings(focus){
             <div class="settings-option">
               <div><span id="settings-theme-label">Tema da interface</span><small>Escolha a aparência do painel.</small></div>
               <div class="settings-theme" role="group" aria-labelledby="settings-theme-label">
-                <label><input type="radio" name="theme" value="light"${checked(user?.theme !== 'dark')}><span>Claro</span></label>
-                <label><input type="radio" name="theme" value="dark"${checked(user?.theme === 'dark')}><span>Escuro</span></label>
+                <label><input type="radio" name="theme" value="light"${checked(preferences.theme !== 'dark')}><span>Claro</span></label>
+                <label><input type="radio" name="theme" value="dark"${checked(preferences.theme === 'dark')}><span>Escuro</span></label>
               </div>
             </div>
             <label class="settings-option">
               <span>Transportar saldo do mês anterior<small>Inclui o saldo anterior no total do mês.</small></span>
-              <input type="checkbox" role="switch" name="carryOver"${checked(user?.carryOver !== false)}>
+              <input type="checkbox" role="switch" name="carryOver"${checked(preferences.carryOver !== false)}>
             </label>
             <label class="settings-option">
               <span>Formatação automática de valores<small>Preenche as casas decimais ao digitar lançamentos.</small></span>
-              <input type="checkbox" role="switch" name="amountMask"${checked(user?.amountMask !== false)}>
+              <input type="checkbox" role="switch" name="amountMask"${checked(preferences.amountMask !== false)}>
             </label>
             <div class="settings-option">
               <div><label for="settings-currency">Moeda principal</label><small>Moeda dos lançamentos e extratos.</small></div>
               <select name="currency" id="settings-currency"><option value="BRL">BRL (R$) – Real Brasileiro</option></select>
             </div>
-            <div class="settings-actions"><button class="settings-primary" type="submit">${icon('check')} Salvar preferências</button></div>
           </fieldset>
           <p class="settings-feedback" role="alert"></p>
+          <button type="button" data-preference-retry hidden>Tentar novamente</button>
         </form>
       </section>
-      <section class="settings-card" aria-labelledby="settings-notifications">
-        <h2 id="settings-notifications" tabindex="-1">${icon('notifications')} Notificações</h2>
-        <p>Indisponível no momento.</p>
-      </section>
       <section class="settings-card settings-danger" aria-labelledby="settings-danger-title">
-        <div><h2 id="settings-danger-title">${icon('warning')} Excluir conta e todos os dados</h2>
+        <div><h2 id="settings-danger-title"><span class="settings-warning">${icon('warning')}</span> Excluir conta e todos os dados</h2>
           <p>Remove permanentemente seus lançamentos e configurações. Essa ação não pode ser desfeita.</p></div>
         <button type="button" data-settings-open="settings-delete" ${locked}>Excluir minha conta</button>
       </section>
@@ -1076,7 +1162,26 @@ function wireSettings(){
   const dialog = deletion.closest('dialog');
   const payday = profile.elements.payday;
   const phone = profile.elements.phone;
-  let toastTimer;
+  const state = settingsPreferenceState();
+  if(state){
+    preferences.addEventListener('submit',event=>event.preventDefault());
+    preferences.addEventListener('change',event=>{
+      if(preferenceState !== state) return;
+      const control = event.target;
+      if(!['theme','carryOver','amountMask','currency'].includes(control.name)) return;
+      state.pending[control.name] = control.type === 'checkbox' ? control.checked : control.value;
+      state.failed = false;
+      clearTimeout(settingsToastTimer);
+      root.querySelector('.settings-toast').textContent='';
+      drainPreferences(state);
+    });
+    preferences.querySelector('[data-preference-retry]').addEventListener('click',()=>{
+      if(preferenceState !== state) return;
+      state.failed = false;
+      drainPreferences(state);
+    });
+    showPreferenceStatus(state);
+  }
 
   root.querySelectorAll('[data-settings-target]').forEach(button=>button.addEventListener('click',()=>{
     root.querySelector('[aria-current="location"]')?.removeAttribute('aria-current');
@@ -1084,7 +1189,8 @@ function wireSettings(){
     button.scrollIntoView({block:'nearest',inline:'nearest'});
     const target = document.getElementById(button.dataset.settingsTarget);
     target.focus({preventScroll:true});
-    target.scrollIntoView({block:'start'});
+    const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+    target.scrollIntoView({block:'start',behavior:reducedMotion ? 'instant' : 'smooth'});
   }));
   root.querySelectorAll('[data-settings-open]').forEach(button=>button.addEventListener('click',()=>{
     document.getElementById(button.dataset.settingsOpen).showModal();
@@ -1124,20 +1230,18 @@ function wireSettings(){
     button.textContent=busyText;
     form.setAttribute('aria-busy','true');
     try{
+      await state?.saving;
+      if(epoch !== accountEpoch) return;
       const finish = await save();
       if(epoch === accountEpoch && accountUser?.id === owner) finish();
     }catch(error){
       if(epoch !== accountEpoch) return;
-      if(error.status === 401){expireAccount();return;}
-      if(error.status === 409){
-        await restoreAccount();
-        main.querySelector('.settings-toast')?.append('A sessão mudou. Confira qual conta está aberta.');
-        return;
-      }
+      if(await handleSettingsSessionError(error)) return;
       feedback.textContent = error.status === 400 || error.status === 422
         ? 'Confira os dados informados e tente novamente.' : errorText;
     }finally{
       settingsWriting = false;
+      drainPreferences(preferenceState);
       fields.forEach(field=>{field.disabled=false;});
       button.innerHTML=originalLabel;
       form.removeAttribute('aria-busy');
@@ -1148,20 +1252,13 @@ function wireSettings(){
     const updated = requireAccountUser(await apiRequest('/api/auth/profile',{...values(),expectedUserId},'PATCH'));
     return () => {
       if(updated.id !== accountUser.id) throw new Error('Invalid account response');
-      accountUser = updated;
-      updateAccountChrome(false);
+      applySettingsProfile(updated);
       if(!root.isConnected) return;
       const title = accountName();
       root.querySelector('[data-settings-name]').textContent=title;
       const initials = root.querySelector('[data-settings-initials]');
       initials.firstChild.nodeValue=accountInitials(title);
-      const stamp = root.querySelector('[data-settings-sync]');
-      stamp.textContent=accountDate(updated.updatedAt,{dateStyle:'short',timeStyle:'short'});
-      stamp.parentElement.hidden=!stamp.textContent;
-      const toast = root.querySelector('.settings-toast');
-      clearTimeout(toastTimer);
-      toast.textContent=notice;
-      toastTimer=setTimeout(()=>{toast.textContent='';},4000);
+      showSettingsToast(notice);
     };
   };
   submit(profile,saveProfile(()=>({
@@ -1170,12 +1267,6 @@ function wireSettings(){
     paydayRule:payday.value === 'fifth_business_day' ? payday.value : 'fixed',
     ...(payday.value === 'fifth_business_day' ? {} : {paydayDay:Number(payday.value)})
   }),'Perfil atualizado.'),'Salvando…','Não foi possível salvar o perfil. Tente novamente.');
-  submit(preferences,saveProfile(()=>({
-    theme:preferences.elements.theme.value,
-    carryOver:preferences.elements.carryOver.checked,
-    amountMask:preferences.elements.amountMask.checked,
-    currency:preferences.elements.currency.value
-  }),'Preferências atualizadas.'),'Salvando…','Não foi possível salvar as preferências. Tente novamente.');
   submit(deletion,async()=>{
     const result = await apiRequest('/api/user/account',{confirm:true,expectedUserId},'DELETE');
     if(result !== null) throw new Error('Invalid deletion response');
@@ -1550,7 +1641,8 @@ accountChannel?.addEventListener('message',event=>{
 });
 document.addEventListener('visibilitychange',()=>{
   if(document.visibilityState!=='visible') return;
-  if(accountUser&&!authBusy&&!saveBusy&&!settingsWriting&&!entryEditor&&!deletingTransactionIds.size&&accountState==='ready'&&location.hash!=='#configuracoes') restoreAccount();
+  if(accountUser&&!authBusy&&!saveBusy&&!settingsWriting&&!entryEditor&&!deletingTransactionIds.size&&accountState==='ready'&&location.hash!=='#configuracoes'
+    &&!preferenceState?.saving&&!preferenceState?.failed) restoreAccount();
   else refreshHomeDate();
 });
 if(appMode==='checking') restoreAccount();
