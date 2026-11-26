@@ -55,12 +55,17 @@ function googleClient(projectUrl, key, origin, request = fetch) {
       const { identities } = await user.json();
       const google = Array.isArray(identities) ? identities.filter(item => item.provider === 'google') : [];
       if (google.length !== 1) return undefined;
-      const { sub, email, email_verified: verified, name, full_name: fullName } = google[0].identity_data ?? {};
+      const { sub, email, email_verified: verified, name, full_name: fullName, avatar_url: avatar, picture } = google[0].identity_data ?? {};
       const normalizedEmail = typeof email === 'string' ? email.trim().toLowerCase() : '';
       if (verified !== true || typeof sub !== 'string' || !/^[^\s\x00-\x1f\x7f]{1,255}$/.test(sub)
           || normalizedEmail.length > 254 || !/^[^\s@\x00]+@[^\s@\x00]+\.[^\s@\x00]+$/.test(normalizedEmail)) return undefined;
       const displayName = [name, fullName].find(value => typeof value === 'string' && value.trim());
-      return { subject: sub, email: normalizedEmail, name: displayName?.replace(/\x00/g, '').trim().slice(0, 120) || null };
+      const avatarUrl = [avatar, picture].find(value => typeof value === 'string' && value.length <= 2048
+        && /^https:\/\/lh[0-9]+\.googleusercontent\.com\/[a-z0-9/_=.%-]+$/i.test(value));
+      return {
+        subject: sub, email: normalizedEmail,
+        name: displayName?.replace(/\x00/g, '').trim().slice(0, 120) || null, avatarUrl,
+      };
     },
   };
 }

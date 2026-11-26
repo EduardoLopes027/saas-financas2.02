@@ -48,6 +48,8 @@ Uma conta criada pelo Google tem como previsão inicial o quinto dia de segunda 
 
 ## Conferência
 
+Para atualizar uma instalação existente com Configurações da Conta, aplique a [migração de configurações](../supabase/migrations/20261126000000_account_settings.sql) no SQL Editor depois da migração do Google OAuth e antes do deploy. Confira se `finflow_app` herda os privilégios de `finflow_runtime`. Uma instalação nova que usou o `supabase/schema.sql` atualizado já tem a estrutura e os privilégios da migração.
+
 - Abra o domínio canônico e confira se a tela de login carrega. Uma chamada a `GET /api/auth/session` sem sessão deve retornar `401`.
 - Se a chamada retornar `503`, procure `[finflow/api] Initialization failed` nos Runtime Logs. `28P01` indica senha recusada, `42P01` indica tabela ausente e `42501` indica que é preciso conferir os privilégios de `finflow_app`, incluindo a concessão de `finflow_runtime`.
 - Cadastre duas contas de teste. Em uma delas, crie uma receita no mês anterior e uma despesa no mês corrente. Confira o saldo acumulado na Home e os totais do mês em Lançamentos.

@@ -152,22 +152,26 @@ function fifthWeekday(year, month){
   }
 }
 
-function configuredSalaryDate(salaryDay, year, month){
-  if(salaryDay === '5-business' || salaryDay === '5') return fifthWeekday(year,month-1);
+function configuredSalaryDate(salaryDay, year, month, rule){
+  if(rule === 'fifth_business_day' || (!rule && ['5-business','5'].includes(salaryDay))) return fifthWeekday(year,month-1);
   const lastDay = utcDate(year,month,0).getUTCDate();
-  const day = salaryDay === '30' ? lastDay : Number(salaryDay);
+  const day = !rule && salaryDay === '30' ? lastDay : Number(salaryDay);
   return utcDate(year,month-1,Math.min(day,lastDay)).toISOString().split('T')[0];
 }
 
-function salaryForecast(items, reference, salaryDay){
+function salaryForecast(items, reference, user){
+  const rule = user?.paydayRule;
+  const salaryDay = rule ? user.paydayDay : user?.salaryDay;
+  const fixedDay = Number(salaryDay);
   const salaries = items.filter(item => item.type === 'Receita' && item.category === 'Salário');
   const dates = salaries.map(item => item.date).sort();
   let date = dates.find(value => value >= reference);
   const estimated = !date;
-  if(estimated && ['1','5','5-business','10','15','20','25','30'].includes(salaryDay)){
+  if(estimated && (rule === 'fifth_business_day' || salaryDay === '5-business' ||
+    Number.isInteger(fixedDay) && fixedDay >= 1 && fixedDay <= 31)){
     const [year, monthNumber] = reference.split('-').map(Number);
-    date = configuredSalaryDate(salaryDay,year,monthNumber);
-    if(date < reference) date = configuredSalaryDate(salaryDay,year,monthNumber+1);
+    date = configuredSalaryDate(salaryDay,year,monthNumber,rule);
+    if(date < reference) date = configuredSalaryDate(salaryDay,year,monthNumber+1,rule);
   }else if(estimated){
     const last = dates.at(-1);
     if(!last) return null;
@@ -185,7 +189,8 @@ function salaryForecast(items, reference, salaryDay){
     if(date < reference) date = estimate(earliest + 1);
   }
   if(date.startsWith('+')) return null;
-  const before = items.filter(item => item.date < date);
+  const openingDate = user?.carryOver === false ? reference.slice(0,7) + '-01' : '';
+  const before = items.filter(item => item.date >= openingDate && item.date < date);
   const balance = sum(before.filter(item=>item.type==='Receita')) - sum(before.filter(item=>item.type==='Despesa'));
   const days = (Date.parse(date) - Date.parse(reference)) / 86400000;
   return {date, estimated, balance, days, daily:days ? Math.floor(Math.max(0,balance) / days) : null};
@@ -201,7 +206,7 @@ function localCalendarDate(now = new Date()){
 function mountHome(showDashboard){
   const home = stitchTemplate('home');
   if(accountUser){
-    const name = [accountUser.full_name, accountUser.name].find(value => typeof value === 'string' && value.trim());
+    const name = [accountUser.displayName, accountUser.full_name, accountUser.name].find(value => typeof value === 'string' && value.trim());
     const firstName = name?.trim().split(/\s+/, 1)[0];
     home.querySelector('h1').textContent = firstName ? 'Olá, ' + firstName : 'Olá';
   }
@@ -220,13 +225,13 @@ function mountHome(showDashboard){
   const month = items.filter(item => item.date.startsWith(monthKey));
   const [year, monthNumber] = monthKey.split('-').map(Number);
   const days = utcDate(year,monthNumber,0).getUTCDate();
-  const throughToday = items.filter(item => item.date <= today);
+  const throughToday = items.filter(item => item.date <= today && (accountUser?.carryOver !== false || item.date.startsWith(monthKey)));
   const expenses = month.filter(item => item.type === 'Despesa');
   const spent = sum(expenses);
   const monthIncome = sum(month.filter(item => item.type === 'Receita'));
   const balance = sum(throughToday.filter(item => item.type === 'Receita'))
     - sum(throughToday.filter(item => item.type === 'Despesa'));
-  const salary = salaryForecast(items, today, accountUser?.salaryDay);
+  const salary = salaryForecast(items, today, accountUser);
   const salaryDate = salary ? salaryDateLabel.format(new Date(salary.date)) : '';
   const salaryPeriod = salary ? (salary.days === 0 ? 'Hoje' : salary.days === 1 ? 'Falta 1 dia' : 'Faltam ' + salary.days + ' dias') + ' · ' + salaryDate : 'Sem data de salário';
   const recent = newest(month).slice(0,5);
@@ -380,6 +385,10 @@ function updateTransactionSummary(inPeriod){
   const income = sum(incomes);
   const expense = sum(expenses);
   const monthly = monthlyBalance(records(), filters.allMonths ? '' : selectedMonth);
+  if(accountUser?.carryOver === false){
+    monthly.total -= monthly.carryOver;
+    monthly.carryOver = 0;
+  }
   const periodNet = income - expense;
   stitchSlot(main,'period-net').textContent = signedMoney(periodNet, periodNet < 0 ? '−' : '+');
   main.querySelector('[data-total=income]').textContent = signedMoney(income, '+');
@@ -730,14 +739,14 @@ async function apiRequest(path, body, method){
   return response.status === 204 ? null : response.json();
 }
 
-async function linkGoogleAccount(){
+async function linkGoogleAccount(googleLink, googleLinkStatus){
   if(!accountUser || googleLink.disabled) return;
-  const userId=accountUser.id;
+  const epoch=accountEpoch;
   googleLink.disabled=true;
   googleLinkStatus.textContent='Abrindo o Google…';
   try{
     const result=await apiRequest('/api/auth/google/link',{});
-    if(accountUser?.id!==userId){
+    if(accountEpoch!==epoch){
       googleLink.disabled=false;
       return;
     }
@@ -750,7 +759,7 @@ async function linkGoogleAccount(){
     location.assign(destination.href);
   }catch(error){
     googleLink.disabled=false;
-    if(accountUser?.id!==userId) return;
+    if(accountEpoch!==epoch) return;
     if(error.status===401){expireAccount();return;}
     googleLinkStatus.textContent=error.status===503 || error.status===404
       ? 'Vinculação com o Google indisponível no momento.'
@@ -868,7 +877,7 @@ async function restoreAccount(){
 }
 
 async function logout(){
-  if(authBusy) return;
+  if(authBusy || settingsWriting) return;
   suspendedDraft=null;
   forgetAccount();
   const epoch=accountEpoch;
@@ -889,10 +898,314 @@ async function logout(){
   render(true);
 }
 
+let settingsWriting = false;
+
+function accountName(){
+  return accountUser?.displayName || accountUser?.full_name || accountUser?.name
+    || (accountUser ? 'Minha conta' : 'Beatriz');
+}
+
+function accountInitials(name){
+  return name.trim().split(/\s+/).slice(0,2).map(part=>Array.from(part)[0]).join('').toLocaleUpperCase('pt-BR');
+}
+
+function accountDate(value, options){
+  const date = new Date(value);
+  return value && Number.isFinite(date.valueOf()) ? date.toLocaleString('pt-BR',options) : '';
+}
+
+function formatAccountPhone(value){
+  const digits = value.replace(/\D/g,'');
+  const national = digits.length >= 12 && digits.startsWith('55') ? digits.slice(2) : digits;
+  const match = /^(\d{2})(\d{4,5})(\d{4})$/.exec(national);
+  return match ? '+55 (' + match[1] + ') ' + match[2] + '-' + match[3] : value.trim();
+}
+
+function mountSettings(focus){
+  const user = accountUser;
+  const name = accountName();
+  const locked = user ? '' : 'disabled';
+  const checked = value => value ? ' checked' : '';
+  const fifth = user?.paydayRule === 'fifth_business_day'
+    || !user?.paydayRule && ['5','5-business'].includes(user?.salaryDay);
+  const avatar = /^https:\/\/lh[0-9]+\.googleusercontent\.com\//i.test(user?.googleAvatarUrl ?? '') ? user.googleAvatarUrl : '';
+  const joined = accountDate(user?.createdAt,{month:'long',year:'numeric',timeZone:'UTC'});
+  const synced = accountDate(user?.updatedAt,{dateStyle:'short',timeStyle:'short'});
+  const paths = {
+    "badge": "M8 7V4h8v3 M5 7h14a2 2 0 0 1 2 2v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a2 2 0 0 1 2-2Z M7 15h4m3-3h3m-3 4h3 M9 12h.01",
+    "check": "m5 12 4 4L19 6",
+    "link": "M10 13a4 4 0 0 0 6 0l3-3a4 4 0 0 0-6-6l-2 2m3 5a4 4 0 0 0-6 0l-3 3a4 4 0 0 0 6 6l2-2",
+    "account_circle": "M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20Zm0-9a3 3 0 1 0 0-6 3 3 0 0 0 0 6Zm-6 6c0-3 2-4 6-4s6 1 6 4",
+    "account_balance": "m3 9 9-5 9 5H3Zm2 11h14M7 12v5m5-5v5m5-5v5",
+    "tune": "M4 6h16M4 12h16M4 18h16M8 4v4m8 2v4m-6 2v4",
+    "notifications": "M5 17h14l-2-4V9a5 5 0 0 0-10 0v4l-2 4Zm5 3h4",
+    "warning": "M12 4 3 20h18L12 4Zm0 6v4m0 3h.01"
+  };
+  const icon = name => '<svg class="settings-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="'+paths[name]+'"/></svg>';
+  main.innerHTML = `
+    <div class="settings-content">
+      <p class="settings-breadcrumb"><a href="#painel">Finanças pessoais</a> / Configurações</p>
+      <div class="settings-heading">
+        <div><h1 tabindex="-1">Configurações da Conta</h1>
+          <p>Gerencie suas informações pessoais, preferências financeiras e segurança.</p></div>
+        <span class="settings-sync" ${synced ? '' : 'hidden'}>Última atualização do perfil: <span data-settings-sync>${escape(synced)}</span></span>
+      </div>
+      <nav class="settings-pills" aria-label="Seções de configurações">
+        <button type="button" data-settings-target="settings-profile" aria-current="location">Perfil</button>
+        <button type="button" data-settings-target="settings-preferences">Preferências Financeiras</button>
+        <button type="button" data-settings-target="settings-security">Segurança e Login</button>
+        <button type="button" data-settings-target="settings-notifications">Notificações</button>
+      </nav>
+      ${user ? '' : '<p class="settings-demo">Demonstração com dados fictícios. Entre em uma conta para alterar configurações.</p>'}
+      <section class="settings-card" aria-labelledby="settings-profile">
+        <h2 id="settings-profile" tabindex="-1">${icon('badge')} Informações Pessoais</h2>
+        <p>Atualize os dados exibidos no seu painel.</p>
+        <div class="settings-identity">
+          <span class="settings-avatar" aria-hidden="true" data-settings-initials>${escape(accountInitials(name))}${avatar ? '<img src="'+escape(avatar)+'" alt="" referrerpolicy="no-referrer" hidden>' : ''}</span>
+          <div><strong data-settings-name>${escape(name)}</strong> ${user ? '<span class="settings-status">Conta ativa</span>' : ''}
+            ${user ? '<small>'+escape(user.email)+'</small>' : ''}
+            ${joined ? '<small>Membro desde '+escape(joined)+'</small>' : ''}</div>
+        </div>
+        <form id="settings-profile-form">
+          <fieldset ${locked}>
+            <div class="settings-fields">
+              <label>Nome completo<input name="displayName" autocomplete="name" required maxlength="100" value="${escape(name)}"></label>
+              <label>E-mail ${user?.emailVerified === true ? '<span class="settings-verified">Verificado</span>' : ''}
+                <input name="email" type="email" autocomplete="email" readonly value="${escape(user?.email ?? '')}"></label>
+              <label>Telefone / WhatsApp (opcional)<input name="phone" type="tel" autocomplete="tel" maxlength="32" value="${escape(formatAccountPhone(user?.phone ?? ''))}"></label>
+              <div><label for="settings-payday-rule">Recebimento do salário</label>
+                <select name="payday" id="settings-payday-rule">
+                  ${Array.from({length:31},(_,index)=>{
+                    const day = index + 1;
+                    return '<option value="'+day+'"'+(!fifth && day === (Number(user?.paydayDay ?? user?.salaryDay) || 1) ? ' selected' : '')+'>Dia '+String(day).padStart(2,'0')+'</option>';
+                  }).join('')}
+                  <option value="fifth_business_day"${fifth ? ' selected' : ''}>5º dia útil</option>
+                </select>
+              </div>
+            </div>
+            <div class="settings-actions"><button class="settings-primary" type="submit">${icon('check')} Salvar alterações</button></div>
+          </fieldset>
+          <p class="settings-feedback" role="alert"></p>
+        </form>
+      </section>
+      <section class="settings-card" aria-labelledby="settings-security">
+        <h2 id="settings-security" tabindex="-1">${icon('link')} Contas Conectadas</h2>
+        <p>Serviços vinculados para acesso à sua conta.</p>
+        <div class="settings-service">${icon('account_circle')}
+          <div><strong>Conta Google</strong><small>${user?.googleLinked ? escape(user.googleEmail || 'Conectada') : user?.googleAvailable ? 'Disponível para vincular' : 'Indisponível no momento'}</small></div>
+          ${user?.googleLinked ? '<a href="https://myaccount.google.com/connections" target="_blank" rel="noopener noreferrer">Gerenciar</a>'
+            : '<button type="button" data-settings-google '+(user?.googleAvailable ? '' : 'disabled')+'>Vincular</button>'}
+        </div>
+        <p data-settings-google-status role="status"></p>
+        <div class="settings-service">${icon('account_balance')}
+          <div><strong>Open Finance Brasil</strong><small>Indisponível no momento</small></div>
+          <button type="button" data-settings-open="settings-open-finance">Saiba mais</button>
+        </div>
+        ${user ? '<div class="settings-actions"><button type="button" data-settings-logout>Sair da conta</button></div>' : ''}
+      </section>
+      <section class="settings-card" aria-labelledby="settings-preferences">
+        <h2 id="settings-preferences" tabindex="-1">${icon('tune')} Preferências do Sistema</h2>
+        <p>Configure a aparência e os cálculos financeiros do FinFlow.</p>
+        <form id="settings-preferences-form">
+          <fieldset ${locked}>
+            <div class="settings-option">
+              <div><span id="settings-theme-label">Tema da interface</span><small>Escolha a aparência do painel.</small></div>
+              <div class="settings-theme" role="group" aria-labelledby="settings-theme-label">
+                <label><input type="radio" name="theme" value="light"${checked(user?.theme !== 'dark')}><span>Claro</span></label>
+                <label><input type="radio" name="theme" value="dark"${checked(user?.theme === 'dark')}><span>Escuro</span></label>
+              </div>
+            </div>
+            <label class="settings-option">
+              <span>Transportar saldo do mês anterior<small>Inclui o saldo anterior no total do mês.</small></span>
+              <input type="checkbox" role="switch" name="carryOver"${checked(user?.carryOver !== false)}>
+            </label>
+            <label class="settings-option">
+              <span>Formatação automática de valores<small>Preenche as casas decimais ao digitar lançamentos.</small></span>
+              <input type="checkbox" role="switch" name="amountMask"${checked(user?.amountMask !== false)}>
+            </label>
+            <div class="settings-option">
+              <div><label for="settings-currency">Moeda principal</label><small>Moeda dos lançamentos e extratos.</small></div>
+              <select name="currency" id="settings-currency"><option value="BRL">BRL (R$) – Real Brasileiro</option></select>
+            </div>
+            <div class="settings-actions"><button class="settings-primary" type="submit">${icon('check')} Salvar preferências</button></div>
+          </fieldset>
+          <p class="settings-feedback" role="alert"></p>
+        </form>
+      </section>
+      <section class="settings-card" aria-labelledby="settings-notifications">
+        <h2 id="settings-notifications" tabindex="-1">${icon('notifications')} Notificações</h2>
+        <p>Indisponível no momento.</p>
+      </section>
+      <section class="settings-card settings-danger" aria-labelledby="settings-danger-title">
+        <div><h2 id="settings-danger-title">${icon('warning')} Excluir conta e todos os dados</h2>
+          <p>Remove permanentemente seus lançamentos e configurações. Essa ação não pode ser desfeita.</p></div>
+        <button type="button" data-settings-open="settings-delete" ${locked}>Excluir minha conta</button>
+      </section>
+      <dialog id="settings-open-finance" aria-labelledby="settings-finance-title">
+        <h2 id="settings-finance-title">Open Finance Brasil</h2>
+        <p>A conexão automática com instituições financeiras ainda está indisponível.</p>
+        <form method="dialog" class="settings-actions"><button autofocus>Fechar</button></form>
+      </dialog>
+      <dialog id="settings-delete" aria-labelledby="settings-delete-title" aria-describedby="settings-delete-description">
+        <h2 id="settings-delete-title">Excluir minha conta?</h2>
+        <p id="settings-delete-description">Sua conta FinFlow, seus lançamentos e suas configurações serão excluídos permanentemente. ${user?.googleLinked === true ? 'A conta Google vinculada continuará existindo no Google.' : ''}</p>
+        <form id="settings-delete-form">
+          <label class="settings-confirm"><input type="checkbox" required> Confirmo a exclusão permanente da minha conta e dos meus dados.</label>
+          <p class="settings-feedback" role="alert"></p>
+          <div class="settings-actions"><button type="button" data-settings-cancel autofocus>Cancelar</button><button type="submit">Excluir permanentemente</button></div>
+        </form>
+      </dialog>
+      <p class="settings-toast" role="status"></p>
+    </div>`;
+  wireSettings();
+  if(focus) main.querySelector('h1').focus();
+}
+
+function wireSettings(){
+  const expectedUserId = accountUser?.id;
+  const root = main.querySelector('.settings-content');
+  const avatar = root.querySelector('.settings-identity img');
+  if(avatar){
+    const reveal = () => {avatar.hidden = false;};
+    if(avatar.complete && avatar.naturalWidth) reveal();
+    else avatar.addEventListener('load',reveal,{once:true});
+  }
+  const profile = root.querySelector('#settings-profile-form');
+  const preferences = root.querySelector('#settings-preferences-form');
+  const deletion = root.querySelector('#settings-delete-form');
+  const dialog = deletion.closest('dialog');
+  const payday = profile.elements.payday;
+  const phone = profile.elements.phone;
+  let toastTimer;
+
+  root.querySelectorAll('[data-settings-target]').forEach(button=>button.addEventListener('click',()=>{
+    root.querySelector('[aria-current="location"]')?.removeAttribute('aria-current');
+    button.setAttribute('aria-current','location');
+    button.scrollIntoView({block:'nearest',inline:'nearest'});
+    const target = document.getElementById(button.dataset.settingsTarget);
+    target.focus({preventScroll:true});
+    target.scrollIntoView({block:'start'});
+  }));
+  root.querySelectorAll('[data-settings-open]').forEach(button=>button.addEventListener('click',()=>{
+    document.getElementById(button.dataset.settingsOpen).showModal();
+  }));
+  root.querySelector('[data-settings-cancel]').addEventListener('click',()=>dialog.close());
+  dialog.addEventListener('cancel',event=>{
+    if(settingsWriting) event.preventDefault();
+  });
+  dialog.addEventListener('close',()=>{
+    deletion.reset();
+    deletion.querySelector('.settings-feedback').textContent='';
+  });
+  root.querySelector('[data-settings-logout]')?.addEventListener('click',()=>{
+    if(!settingsWriting) logout();
+  });
+  root.querySelectorAll('[data-settings-target]').forEach(button=>button.addEventListener('focus',()=>{
+    button.scrollIntoView({block:'nearest',inline:'nearest'});
+  }));
+  const google = root.querySelector('[data-settings-google]');
+  google?.addEventListener('click',()=>{
+    if(!settingsWriting) linkGoogleAccount(google,root.querySelector('[data-settings-google-status]'));
+  });
+  phone.addEventListener('blur',()=>{phone.value = formatAccountPhone(phone.value);});
+
+  const submit = (form, save, busyText, errorText) => form.addEventListener('submit',async event=>{
+    event.preventDefault();
+    if(!expectedUserId || accountUser?.id !== expectedUserId || settingsWriting) return;
+    const epoch = accountEpoch;
+    const owner = accountUser.id;
+    const feedback = form.querySelector('.settings-feedback');
+    const button = event.submitter ?? form.querySelector('[type="submit"]');
+    const originalLabel = button.innerHTML;
+    feedback.textContent='';
+    settingsWriting = true;
+    const fields = [...form.elements].filter(field=>!field.disabled);
+    fields.forEach(field=>{field.disabled=true;});
+    button.textContent=busyText;
+    form.setAttribute('aria-busy','true');
+    try{
+      const finish = await save();
+      if(epoch === accountEpoch && accountUser?.id === owner) finish();
+    }catch(error){
+      if(epoch !== accountEpoch) return;
+      if(error.status === 401){expireAccount();return;}
+      if(error.status === 409){
+        await restoreAccount();
+        main.querySelector('.settings-toast')?.append('A sessão mudou. Confira qual conta está aberta.');
+        return;
+      }
+      feedback.textContent = error.status === 400 || error.status === 422
+        ? 'Confira os dados informados e tente novamente.' : errorText;
+    }finally{
+      settingsWriting = false;
+      fields.forEach(field=>{field.disabled=false;});
+      button.innerHTML=originalLabel;
+      form.removeAttribute('aria-busy');
+      if(form.isConnected && document.activeElement === document.body) button.focus();
+    }
+  });
+  const saveProfile = (values, notice) => async () => {
+    const updated = requireAccountUser(await apiRequest('/api/auth/profile',{...values(),expectedUserId},'PATCH'));
+    return () => {
+      if(updated.id !== accountUser.id) throw new Error('Invalid account response');
+      accountUser = updated;
+      updateAccountChrome(false);
+      if(!root.isConnected) return;
+      const title = accountName();
+      root.querySelector('[data-settings-name]').textContent=title;
+      const initials = root.querySelector('[data-settings-initials]');
+      initials.firstChild.nodeValue=accountInitials(title);
+      const stamp = root.querySelector('[data-settings-sync]');
+      stamp.textContent=accountDate(updated.updatedAt,{dateStyle:'short',timeStyle:'short'});
+      stamp.parentElement.hidden=!stamp.textContent;
+      const toast = root.querySelector('.settings-toast');
+      clearTimeout(toastTimer);
+      toast.textContent=notice;
+      toastTimer=setTimeout(()=>{toast.textContent='';},4000);
+    };
+  };
+  submit(profile,saveProfile(()=>({
+    displayName:profile.elements.displayName.value.trim(),
+    phone:phone.value.trim(),
+    paydayRule:payday.value === 'fifth_business_day' ? payday.value : 'fixed',
+    ...(payday.value === 'fifth_business_day' ? {} : {paydayDay:Number(payday.value)})
+  }),'Perfil atualizado.'),'Salvando…','Não foi possível salvar o perfil. Tente novamente.');
+  submit(preferences,saveProfile(()=>({
+    theme:preferences.elements.theme.value,
+    carryOver:preferences.elements.carryOver.checked,
+    amountMask:preferences.elements.amountMask.checked,
+    currency:preferences.elements.currency.value
+  }),'Preferências atualizadas.'),'Salvando…','Não foi possível salvar as preferências. Tente novamente.');
+  submit(deletion,async()=>{
+    const result = await apiRequest('/api/user/account',{confirm:true,expectedUserId},'DELETE');
+    if(result !== null) throw new Error('Invalid deletion response');
+    return ()=>{
+      suspendedDraft=null;
+      forgetAccount();
+      accountChannel?.postMessage('account-changed');
+      authNotice='Conta excluída.';
+      location.hash='login';
+      render(true);
+    };
+  },'Excluindo…','Não foi possível excluir a conta. Tente novamente.');
+}
+
 function updateAccountChrome(authPreview){
+  const theme = accountUser?.theme === 'dark' ? 'dark' : 'light';
+  document.documentElement.dataset.theme = theme;
+  try {
+    if(accountUser) localStorage.setItem('finflow-theme',theme);
+    else localStorage.removeItem('finflow-theme');
+  } catch {
+    // The session preference still applies when browser storage is disabled.
+  }
+  document.querySelector('[data-mobile-menu]').setAttribute('aria-label', appMode==='demo' ? 'Configurações do protótipo' : 'Configurações da conta');
+  document.querySelector('[data-account-name]').textContent = accountName();
+  document.querySelector('[data-account-initials]').textContent = accountInitials(accountName());
   document.body.classList.toggle('account-mode',appMode!=='demo');
   document.body.classList.toggle('account-gated',authPreview||(appMode!=='demo'&&!accountUser));
   accountTools.hidden=!accountUser;
+  googleLink.hidden = !accountUser?.googleAvailable || accountUser?.googleLinked === true;
   const email=accountTools.querySelector('.account-email');
   email.textContent=accountUser?.email ?? '';
   email.title=email.textContent;
@@ -1078,16 +1391,23 @@ function render(focus){
   const listRoute = visibleRoute === '#lancamentos' && !authPreview && (appMode === 'demo' || accountUser);
   document.body.classList.toggle('transactions-view',!!listRoute);
   document.body.classList.toggle('entry-view',Boolean(entryRoute() && ready && !showSheet));
+  document.body.classList.toggle('settings-view',visibleRoute==='#configuracoes' && (appMode==='demo'||Boolean(accountUser)));
   if(authPreview||(appMode!=='demo'&&!accountUser)){
     document.body.classList.remove('home-view');
     renderAccountGate(focus,authPreview);
     return;
   }
-  if(accountUser&&accountState!=='ready'){
+  if(accountUser&&accountState!=='ready'&&visibleRoute!=='#configuracoes'){
     main.innerHTML='<section class="card state-card"><h1 tabindex="-1">Lançamentos da conta</h1>'
       +(accountState==='error'?'<p role="alert">Não foi possível carregar os lançamentos.</p><button id="account-load-retry">Tentar novamente</button>':'<p role="status">Carregando lançamentos…</p>')+'</section>';
     main.querySelector('#account-load-retry')?.addEventListener('click',loadAccountTransactions);
     if(focus) main.querySelector('h1').focus();
+    return;
+  }
+  if(visibleRoute==='#configuracoes'){
+    document.body.classList.remove('home-view');
+    document.querySelectorAll('nav [aria-current]').forEach(link=>link.removeAttribute('aria-current'));
+    mountSettings(focus);
     return;
   }
   const view = entryRoute() && !showSheet ? 'novo' : visibleRoute === '#lancamentos' ? 'lancamentos' : 'painel';
@@ -1157,6 +1477,11 @@ document.addEventListener('click',event=>{
       location.hash='painel';
     }
   }
+  if(event.target.closest('a[href="#configuracoes"]')) document.querySelector('.toolbar-settings').open=false;
+  if(event.target.closest('[data-mobile-menu]') && appMode!=='demo'){
+    location.hash='configuracoes';
+    return;
+  }
   if(event.target.closest('[data-mobile-menu]')){
     const settings=document.querySelector('.toolbar-settings');
     settings.open=true;
@@ -1198,7 +1523,7 @@ accountTools.closest('details').addEventListener('keydown',event=>{
   settings.open=false;
   settings.querySelector('summary').focus();
 });
-googleLink.addEventListener('click',linkGoogleAccount);
+googleLink.addEventListener('click',()=>linkGoogleAccount(googleLink,googleLinkStatus));
 function refreshHomeDate(){
   const home = main.querySelector('[data-home-date]');
   if(home && home.dataset.homeDate !== localCalendarDate()) render(false);
@@ -1225,7 +1550,7 @@ accountChannel?.addEventListener('message',event=>{
 });
 document.addEventListener('visibilitychange',()=>{
   if(document.visibilityState!=='visible') return;
-  if(accountUser&&!authBusy&&!saveBusy&&!entryEditor&&!deletingTransactionIds.size&&accountState==='ready') restoreAccount();
+  if(accountUser&&!authBusy&&!saveBusy&&!settingsWriting&&!entryEditor&&!deletingTransactionIds.size&&accountState==='ready'&&location.hash!=='#configuracoes') restoreAccount();
   else refreshHomeDate();
 });
 if(appMode==='checking') restoreAccount();

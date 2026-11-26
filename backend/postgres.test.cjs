@@ -82,7 +82,12 @@ test('PostgreSQL descartável com papel restrito: autenticação, Google OAuth, 
   });
   await db.exec('CREATE ROLE anon; CREATE ROLE authenticated; CREATE ROLE service_role;');
   const schema = await readFile(join(__dirname, '../supabase/schema.sql'), 'utf8');
-  await db.exec(schema);
+  const migration = await readFile(join(__dirname, '../supabase/migrations/20261126000000_account_settings.sql'), 'utf8');
+  const profileStart = schema.indexOf('ALTER TABLE finflow_private.users\n  ADD COLUMN IF NOT EXISTS phone');
+  assert.ok(profileStart > 0);
+  await db.exec(schema.slice(0, profileStart) + 'COMMIT;');
+  await db.exec(migration);
+  await db.exec(migration);
   await db.exec(schema);
   const [permissions] = (await db.query(`
     SELECT has_schema_privilege('anon','finflow_private','USAGE') AS anon,
@@ -222,7 +227,10 @@ test('PostgreSQL descartável com papel restrito: autenticação, Google OAuth, 
     return [oauthCookie(response), code];
   }
 
-  const profile = { sub: 'google-1', email: 'nova@example.test', email_verified: true, name: 'Conta ficticia' };
+  const profile = {
+    sub: 'google-1', email: 'nova@example.test', email_verified: true, name: 'Conta ficticia',
+    picture: 'https://lh3.googleusercontent.com/a/test-avatar',
+  };
   const failed = '/?auth_error=google_failed#login';
   assert.equal((await finish(undefined, 'missing')).headers.get('location'), failed);
   const unrelated = await authorize(profile);
@@ -234,12 +242,20 @@ test('PostgreSQL descartável com papel restrito: autenticação, Google OAuth, 
   assert.equal(signedIn.headers.get('location'), '/#painel');
   assert.match(signedIn.headers.getSetCookie()[0], /Max-Age=0/);
   const googleUser = (await (await session(newSession(signedIn))).json()).user;
-  assert.deepEqual(googleUser, { id: googleUser.id, email: profile.email, name: profile.name, salaryDay: '5-business' });
+  assert.equal(googleUser.email, profile.email);
+  assert.equal(googleUser.displayName, profile.name);
+  assert.equal(googleUser.salaryDay, '5-business');
+  assert.equal(googleUser.emailVerified, true);
+  assert.equal(googleUser.googleAvatarUrl, profile.picture);
+  assert.ok(Date.parse(googleUser.googleLinkedAt));
   assert.equal((await finish(...firstFlow)).headers.get('location'), failed);
   const password = { email: profile.email, password: 'senha ficticia sem acesso' };
   assert.equal((await api('auth/login', { method: 'POST', body: password })).status, 401);
   const repeat = await finish(...await authorize({ ...profile, email: 'mudou@example.test' }));
-  assert.equal((await (await session(newSession(repeat))).json()).user.id, googleUser.id);
+  const changedIdentity = (await (await session(newSession(repeat))).json()).user;
+  assert.equal(changedIdentity.id, googleUser.id);
+  assert.equal(changedIdentity.emailVerified, false);
+  assert.equal(changedIdentity.googleAvatarUrl, null);
 
   const existing = { ...profile, sub: 'google-2', email: 'segunda@example.test' };
   const collision = await finish(...await authorize(existing));
@@ -264,4 +280,44 @@ test('PostgreSQL descartável com papel restrito: autenticação, Google OAuth, 
   const revokedFlow = await authorize(existing, newSession(linked));
   assert.equal((await api('auth/logout', { method: 'POST', cookie: newSession(linked), body: {} })).status, 204);
   assert.equal((await finish(...revokedFlow)).headers.get('location'), failed);
+
+  const alive = newSession(await finish(...await authorize(existing)));
+  const other = newSession(repeat);
+  const updateProfile = (body, browserOrigin = origin) => api('auth/profile', {
+    method: 'PATCH', body: { expectedUserId: before.id, ...body }, cookie: alive, browserOrigin,
+  });
+  assert.equal((await updateProfile({ theme: 'dark' }, null)).status, 403);
+  assert.equal((await updateProfile({ email: 'outra@example.test' })).status, 400);
+  assert.equal((await updateProfile({ expectedUserId: googleUser.id, theme: 'dark' })).status, 409);
+  const preferences = { displayName: 'Updated', paydayRule: 'fixed', paydayDay: 31, theme: 'dark', amountMask: false };
+  const update = await updateProfile(preferences);
+  assert.equal(update.status, 200);
+  const updated = (await update.json()).user;
+  for (const [key, value] of Object.entries(preferences)) assert.equal(updated[key], value);
+  assert.equal(updated.emailVerified, true);
+  assert.ok(Date.parse(updated.updatedAt) >= Date.parse(updated.createdAt));
+  assert.deepEqual((await (await session(alive)).json()).user, updated);
+  assert.equal((await (await session(other)).json()).user.theme, 'light');
+
+  assert.equal((await create({ recurrence: 'Mensal', receipt, paymentMethod: 'Pix' }, alive)).status, 201);
+  const pendingLink = await authorize(existing, alive);
+  const purge = (confirm, browserOrigin = origin, expectedUserId = before.id) => api('user/account', {
+    method: 'DELETE', cookie: alive, body: { confirm, expectedUserId }, browserOrigin, parsed: true,
+  });
+  assert.equal((await purge(true, null)).status, 403);
+  assert.equal((await purge(false)).status, 400);
+  assert.equal((await purge(true, origin, googleUser.id)).status, 409);
+  const deleted = await purge(true);
+  assert.equal(deleted.status, 204);
+  assert.equal(deleted.headers.getSetCookie().length, 3);
+  assert.ok(deleted.headers.getSetCookie().every(cookie => cookie.includes('Max-Age=0')));
+  assert.equal((await purge(true)).status, 401);
+  assert.equal((await finish(...pendingLink)).headers.get('location'), failed);
+  assert.equal((await session(other)).status, 200);
+
+  for (const table of ['sessions', 'google_identities', 'accounts', 'categories', 'recurring_rules', 'transactions',
+    'transaction_receipts']) {
+    const [row] = await sql.unsafe('SELECT count(*)::int AS count FROM finflow_private.' + table + ' WHERE user_id=$1', [before.id]);
+    assert.equal(row.count, 0, table);
+  }
 });

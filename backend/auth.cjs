@@ -1,4 +1,4 @@
-﻿'use strict';
+'use strict';
 
 const { createHash, randomBytes, scrypt, timingSafeEqual } = require('node:crypto');
 const { readFile, mkdir } = require('node:fs/promises');
@@ -7,6 +7,8 @@ const { dirname, join } = require('node:path');
 const { promisify } = require('node:util');
 const { transactionFields, transactionStore, MAX_TRANSACTION_BODY } = require('./transactions.cjs');
 const { callbackPath, challenge, failure, flowCookie, newFlow, readFlow, redirect } = require('./google-oauth.cjs');
+
+const { profileUpdates, userProfile } = require('./account-settings.cjs');
 
 const deriveKey = promisify(scrypt);
 const COOKIE = 'finflow_session';
@@ -153,6 +155,23 @@ async function sqliteStore(databasePath) {
     const columns = db.prepare('PRAGMA table_info(users)').all();
     if (!columns.some(column => column.name === 'name')) db.exec('ALTER TABLE users ADD COLUMN name TEXT');
     if (!columns.some(column => column.name === 'salary_day')) db.exec('ALTER TABLE users ADD COLUMN salary_day TEXT');
+    const profileColumns = {
+      phone: 'TEXT', payday_rule: 'TEXT', payday_day: 'INTEGER',
+      theme: "TEXT NOT NULL DEFAULT 'light'", carry_over: 'INTEGER NOT NULL DEFAULT 1',
+      amount_mask: 'INTEGER NOT NULL DEFAULT 1', currency: "TEXT NOT NULL DEFAULT 'BRL'",
+      created_at: 'TEXT', updated_at: 'TEXT',
+    };
+    for (const [column, definition] of Object.entries(profileColumns)) {
+      if (!columns.some(existing => existing.name === column)) {
+        db.exec('ALTER TABLE users ADD COLUMN ' + column + ' ' + definition);
+      }
+    }
+    // Keep ownership IDs unique even after an account is purged.
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS user_id_sequence (id INTEGER NOT NULL) STRICT;
+      INSERT INTO user_id_sequence SELECT COALESCE(MAX(id), 0) FROM users
+        HAVING NOT EXISTS (SELECT 1 FROM user_id_sequence);
+    `);
     db.exec('COMMIT');
   } catch (error) {
     db.exec('ROLLBACK');
@@ -160,9 +179,15 @@ async function sqliteStore(databasePath) {
     throw error;
   }
   const getUser = db.prepare('SELECT * FROM users WHERE email = ?');
-  const addUser = db.prepare('INSERT INTO users(email, password_salt, password_hash, name, salary_day) VALUES (?, ?, ?, ?, ?) ON CONFLICT(email) DO NOTHING');
+  const allocateUserId = db.prepare('UPDATE user_id_sequence SET id = id + 1 RETURNING id');
+  const addUser = db.prepare(`
+    INSERT INTO users(id, email, password_salt, password_hash, name, salary_day, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(email) DO NOTHING
+  `);
+  const activeUserId = 'SELECT user_id FROM sessions WHERE token_hash = ? AND expires_at > ?';
+  const purgeUser = db.prepare('DELETE FROM users WHERE id = (' + activeUserId + ')');
   const getSession = db.prepare(`
-    SELECT users.id, users.email, users.name, users.salary_day AS salaryDay FROM sessions JOIN users ON users.id = sessions.user_id
+    SELECT users.* FROM sessions JOIN users ON users.id = sessions.user_id
     WHERE sessions.token_hash = ? AND sessions.expires_at > ?
   `);
   const deleteSession = db.prepare('DELETE FROM sessions WHERE token_hash = ?');
@@ -179,10 +204,18 @@ async function sqliteStore(databasePath) {
     close: () => db.close(),
     getUser: email => getUser.get(email),
     addUser(email, salt, hash, name, salaryDay) {
-      const result = addUser.run(email, salt, hash, name ?? null, salaryDay ?? null);
+      const { id } = allocateUserId.get();
+      const result = addUser.run(id, email, salt, hash, name ?? null, salaryDay ?? null, new Date().toISOString());
       return result.changes ? result.lastInsertRowid : undefined;
     },
     getSession: (hash, now) => getSession.get(hash, now),
+    updateProfile(hash, now, updates) {
+      const assignments = updates.map(([column]) => column + ' = ?').join(', ');
+      const values = updates.map(([, value]) => typeof value === 'boolean' ? Number(value) : value);
+      return db.prepare('UPDATE users SET ' + assignments + ', updated_at = ? WHERE id = ('
+        + activeUserId + ') RETURNING *').get(...values, new Date(now).toISOString(), hash, now);
+    },
+    purgeUser: (hash, now) => Boolean(purgeUser.run(hash, now).changes),
     deleteSession: hash => deleteSession.run(hash),
     rotateSession(hash, userId, expires, previous, now) {
       db.exec('BEGIN IMMEDIATE');
@@ -217,7 +250,14 @@ function createHandler(store, { secure = false, postgres = false, expectedOrigin
   async function requireSession(request) {
     const user = await store.getSession(sessionHash(request), Date.now());
     if (!user) throw new HttpError(401, 'unauthenticated');
-    return account(user.id, user.email, user.name, user.salaryDay);
+    return userProfile(user, Boolean(secure && google));
+  }
+
+  function confirmAccount(user, expectedUserId) {
+    if (!Number.isSafeInteger(expectedUserId) || expectedUserId < 1) {
+      throw new HttpError(400, 'invalid_account');
+    }
+    if (user.id !== expectedUserId) throw new HttpError(409, 'account_changed');
   }
 
   async function authenticate(request, response, isRegister) {
@@ -260,9 +300,12 @@ function createHandler(store, { secure = false, postgres = false, expectedOrigin
     }
     const token = randomBytes(32).toString('base64url');
     const duration = remember === true ? 30 * 24 * 60 * 60 : SESSION_SECONDS;
-    await store.rotateSession(tokenHash(token), user.id, now + duration * 1000, sessionHash(request), now);
+    const hashToken = tokenHash(token);
+    await store.rotateSession(hashToken, user.id, now + duration * 1000, sessionHash(request), now);
+    const profile = await store.getSession(hashToken, Date.now());
+    if (!profile) throw new HttpError(401, 'unauthenticated');
     response.setHeader('Set-Cookie', cookieHeaders(token, remember === false ? null : duration, secure));
-    return json(response, 200, { user: account(user.id, email, user.name, user.salary_day) });
+    return json(response, 200, { user: userProfile(profile, Boolean(secure && google)) });
   }
 
   async function startGoogle(request, response, link) {
@@ -335,12 +378,13 @@ function createHandler(store, { secure = false, postgres = false, expectedOrigin
         && pathname.endsWith('/receipt');
       const updateTransaction = request.method === 'PATCH' && pathname.startsWith('/api/transactions/');
       const jsonPost = route.startsWith('POST /api/auth/') || route === 'POST /api/transactions' || updateTransaction;
-      if (jsonPost || deleteTransaction) {
+      const accountMutation = route === 'PATCH /api/auth/profile' || route === 'DELETE /api/user/account';
+      if (jsonPost || deleteTransaction || accountMutation) {
         if ((secure || request.headers.origin !== undefined) && request.headers.origin !== origin) {
           throw new HttpError(403, 'origin_not_allowed');
         }
         const type = request.headers['content-type']?.split(';')[0].trim().toLowerCase();
-        if (jsonPost && type !== 'application/json') throw new HttpError(415, 'json_required');
+        if ((jsonPost || accountMutation) && type !== 'application/json') throw new HttpError(415, 'json_required');
       }
 
       if (deleteTransaction || downloadReceipt || updateTransaction) {
@@ -395,6 +439,32 @@ function createHandler(store, { secure = false, postgres = false, expectedOrigin
           return await authenticate(request, response, false);
         case 'GET /api/auth/session':
           return json(response, 200, { user: await requireSession(request) });
+        case 'PATCH /api/auth/profile': {
+          const user = await requireSession(request);
+          const body = await readJson(request);
+          if (!body || typeof body !== 'object' || Array.isArray(body)) throw new HttpError(400, 'invalid_profile');
+          const { expectedUserId, ...fields } = body;
+          confirmAccount(user, expectedUserId);
+          const updates = profileUpdates(fields);
+          if (!updates) throw new HttpError(400, 'invalid_profile');
+          const updated = await store.updateProfile(sessionHash(request), Date.now(), updates);
+          if (!updated) throw new HttpError(401, 'unauthenticated');
+          return json(response, 200, { user: userProfile(updated, Boolean(secure && google)) });
+        }
+        case 'DELETE /api/user/account': {
+          const user = await requireSession(request);
+          const body = await readJson(request);
+          if (body?.confirm !== true) throw new HttpError(400, 'confirmation_required');
+          confirmAccount(user, body.expectedUserId);
+          if (Object.keys(body).length !== 2) throw new HttpError(400, 'invalid_account');
+          if (!await store.purgeUser(sessionHash(request), Date.now())) {
+            throw new HttpError(401, 'unauthenticated');
+          }
+          return response.writeHead(204, {
+            'Set-Cookie': [...cookieHeaders('', 0, secure), ...(secure ? [flowCookie('', 0)] : [])],
+            'Cache-Control': 'no-store',
+          }).end();
+        }
         case 'POST /api/auth/logout':
           await store.deleteSession(sessionHash(request));
           return response.writeHead(204, {

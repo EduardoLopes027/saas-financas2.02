@@ -35,6 +35,7 @@ const reasons = new Map(Object.entries({
   '28000': 'PostgreSQL rejected the login role',
   '3D000': 'The configured database does not exist',
   '3F000': 'The FinFlow schema does not exist',
+  '42703': 'A required FinFlow column is missing; check the Google OAuth and account settings migrations',
   '42P01': 'A required FinFlow table is missing; apply supabase/schema.sql',
   '42501': 'The database role lacks permissions on the FinFlow schema or tables',
   '53300': 'PostgreSQL has no available connections',

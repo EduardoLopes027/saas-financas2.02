@@ -1,4 +1,4 @@
-﻿# Autenticação local do FinFlow
+# Autenticação local do FinFlow
 
 Na raiz do repositório, rode com Node.js 24. Não há dependências de instalação.
 
@@ -97,3 +97,13 @@ O OAuth fica disponível na API HTTPS com PostgreSQL. Configure `SUPABASE_URL` e
 - `GET /api/auth/google/callback` consome a tentativa e redireciona para `/#painel` ou `/?auth_error=google_failed#login`. Se o e-mail já pertence a uma conta sem vínculo, o login retorna `/?auth_error=google_link_required#login`. O titular entra com a senha e inicia o vínculo autenticado.
 
 O vínculo usa o identificador permanente do Google. Uma conta criada via OAuth recebe o nome do Google e `salaryDay: "5-business"`, com login por senha desativado. O cookie da tentativa expira em cinco minutos. O teste PostgreSQL usa uma resposta simulada do Supabase e executa as operações com `SET ROLE finflow_runtime`.
+
+## Configurações da conta
+
+- `GET /api/auth/session` e `POST /api/auth/login` retornam `{user}` com o perfil, as preferências e o estado do vínculo Google. `name` e `salaryDay` continuam disponíveis para consumidores legados. `createdAt` pode ser nulo para cadastros SQLite anteriores a esta versão.
+- `PATCH /api/auth/profile` aceita qualquer subconjunto não vazio dos campos `displayName`, `phone`, `paydayRule`, `paydayDay`, `theme`, `carryOver`, `amountMask` e `currency`, mais `expectedUserId` da conta exibida. Retorna `{user}`. O dia fixo aceita inteiros de 1 a 31 e a moeda disponível é `BRL`.
+- `DELETE /api/user/account` requer JSON com `confirm: true` e `expectedUserId`. Retorna `204` após a remoção em cascata dos dados FinFlow e das sessões. A operação não apaga a conta Google ou o cadastro no Supabase Auth.
+- Se a conta exibida divergir da sessão nas gravações, a API retorna `409 account_changed`. Em produção, as duas rotas exigem o cabeçalho `Origin` igual a `APP_ORIGIN`.
+- A verificação de e-mail só é exibida quando o endereço verificado pelo Google coincide com o endereço FinFlow. Vínculos anteriores à migração podem registrar essa evidência no próximo login via Google.
+
+Em uma instalação Supabase existente, aplique `supabase/migrations/20261126000000_account_settings.sql` antes de publicar a API. Se a migração Google OAuth ainda estiver pendente, aplique-a primeiro. Instalações novas podem usar `supabase/schema.sql`. Confirme a concessão de `finflow_runtime` ao login `finflow_app` e o encaminhamento de `/api/auth/profile` e `/api/user/account` para a função Vercel.

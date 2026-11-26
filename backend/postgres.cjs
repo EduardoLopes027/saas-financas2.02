@@ -133,10 +133,15 @@ async function postgresStore(databaseUrl, ca) {
 }
 
 function createStore(sql) {
+  const activeUserId = `SELECT user_id FROM ${schema}.sessions WHERE token_hash = $1 AND expires_at > $2`;
+  const profileColumns = `u.id, u.email, u.name, u.salary_day, u.phone, u.payday_rule, u.payday_day,
+    u.theme, u.carry_over, u.amount_mask, u.currency, u.created_at, u.updated_at,
+    g.created_at AS google_linked_at, g.verified_email AS google_email, g.avatar_url AS google_avatar_url`;
+  const googleJoin = `LEFT JOIN ${schema}.google_identities g ON g.user_id = u.id`;
   return {
     async check() {
-      await sql.unsafe(`SELECT u.id, s.token_hash FROM ${schema}.users u
-        JOIN ${schema}.sessions s ON s.user_id = u.id LIMIT 0`);
+      await sql.unsafe(`SELECT ${profileColumns} FROM ${schema}.users u
+        JOIN ${schema}.sessions s ON s.user_id = u.id ${googleJoin} LIMIT 0`);
     },
     close: () => sql.end(),
     async getUser(email) {
@@ -150,10 +155,24 @@ function createStore(sql) {
       return user?.id;
     },
     async getSession(hash, now) {
-      const [user] = await sql.unsafe(`SELECT u.id, u.email, u.name, u.salary_day AS "salaryDay"
-        FROM ${schema}.sessions s JOIN ${schema}.users u ON u.id = s.user_id
-        WHERE s.token_hash = $1 AND s.expires_at > $2`, [hash, now]);
+      const [user] = await sql.unsafe(`SELECT ${profileColumns} FROM ${schema}.users u ${googleJoin}
+        WHERE u.id = (${activeUserId})`, [hash, now]);
       return user;
+    },
+    async updateProfile(hash, now, updates) {
+      const assignments = updates.map(([column], index) => column + ' = $' + (index + 3)).join(', ');
+      const [user] = await sql.unsafe(`
+        WITH changed AS (
+          UPDATE ${schema}.users SET ${assignments}, updated_at = clock_timestamp()
+          WHERE id = (${activeUserId}) RETURNING *
+        )
+        SELECT ${profileColumns} FROM changed u ${googleJoin}
+      `, [hash, now, ...updates.map(([, value]) => value)]);
+      return user;
+    },
+    async purgeUser(hash, now) {
+      const rows = await sql.unsafe(`DELETE FROM ${schema}.users WHERE id = (${activeUserId}) RETURNING id`, [hash, now]);
+      return rows.length > 0;
     },
     async deleteSession(hash) {
       await sql.unsafe(`DELETE FROM ${schema}.sessions WHERE token_hash = $1`, [hash]);
@@ -193,8 +212,11 @@ function createStore(sql) {
           userId = created.id;
         }
         if (!linked) {
-          await query.unsafe(`INSERT INTO ${schema}.google_identities (subject,user_id) VALUES ($1,$2)`,
-            [identity.subject, userId]);
+          await query.unsafe(`INSERT INTO ${schema}.google_identities (subject,user_id,verified_email,avatar_url)
+            VALUES ($1,$2,$3,$4)`, [identity.subject, userId, identity.email, identity.avatarUrl ?? null]);
+        } else {
+          await query.unsafe(`UPDATE ${schema}.google_identities SET verified_email=$2, avatar_url=$3 WHERE subject=$1`,
+            [identity.subject, identity.email, identity.avatarUrl ?? null]);
         }
         await query.unsafe(`DELETE FROM ${schema}.sessions WHERE token_hash=$1 OR expires_at<=$2`, [previous, now]);
         await query.unsafe(`INSERT INTO ${schema}.sessions (token_hash,user_id,expires_at) VALUES ($1,$2,$3)`,

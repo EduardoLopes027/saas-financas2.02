@@ -1,4 +1,4 @@
-﻿'use strict';
+'use strict';
 
 const assert = require('node:assert/strict');
 const { mkdtemp, rm } = require('node:fs/promises');
@@ -51,16 +51,23 @@ test('cadastro, unicidade, login, sessão persistente, logout e proteção local
 
   const loggedIn = await api('login', { body: credentials });
   assert.equal(loggedIn.status, 200);
-  assert.deepEqual(await loggedIn.json(), account);
+  const loginProfile = (await loggedIn.json()).user;
   const [setCookie, legacyCookie] = loggedIn.headers.getSetCookie();
   assert.match(setCookie, /; Path=\/api; HttpOnly; SameSite=Strict; Max-Age=604800$/);
   assert.match(legacyCookie, /; Path=\/api\/auth; .*Max-Age=0$/);
   const cookie = setCookie.split(';')[0];
-  assert.deepEqual(await (await api('session', { headers: { cookie } })).json(), account);
+  const currentSession = async () => (await (await api('session', { headers: { cookie } })).json()).user;
+  const initialProfile = await currentSession();
+  assert.deepEqual(initialProfile, loginProfile);
+  assert.equal(initialProfile.id, account.user.id);
+  assert.equal(initialProfile.email, account.user.email);
+  assert.ok(Date.parse(initialProfile.createdAt));
+  assert.equal(initialProfile.emailVerified, false);
+  assert.equal(initialProfile.createdAt, initialProfile.updatedAt);
 
   await close(app.server);
   app = await start({ port: 0, databasePath });
-  assert.deepEqual(await (await api('session', { headers: { cookie } })).json(), account);
+  assert.deepEqual(await currentSession(), initialProfile);
 
   const rotated = await api('login', { body: credentials, headers: { cookie } });
   assert.equal(rotated.status, 200);
@@ -121,6 +128,106 @@ test('salva o perfil do cadastro e respeita a duração escolhida no login', asy
     const session = await fetch(url + '/api/auth/session', {
       headers: { Cookie: cookie.split(';')[0] },
     });
-    assert.deepEqual((await session.json()).user, { id: 1, email: 'pessoa@example.test', ...profile });
+    const { user } = await session.json();
+    assert.equal(user.name, profile.name);
+    assert.equal(user.displayName, profile.name);
+    assert.equal(user.salaryDay, profile.salaryDay);
+    assert.equal(user.paydayRule, 'fixed');
+    assert.equal(user.paydayDay, 15);
   }
+});
+
+test('account settings persist and deletion purges only the authenticated owner', async t => {
+  const directory = await mkdtemp(join(tmpdir(), 'finflow-settings-'));
+  const databasePath = join(directory, 'test.sqlite');
+  const { DatabaseSync } = require('node:sqlite');
+  const { server, url } = await start({ port: 0, databasePath });
+  t.after(async () => {
+    await close(server);
+    await rm(directory, { recursive: true });
+  });
+
+  function api(path, method, body, cookie, origin = url) {
+    return fetch(url + '/api/' + path, {
+      method, headers: {
+        Origin: origin, ...(cookie && { Cookie: cookie }),
+        ...(body !== undefined && { 'Content-Type': 'application/json' }),
+      },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+  }
+
+  async function account(email) {
+    const body = { ...credentials, email };
+    const registered = await api('auth/register', 'POST', body);
+    assert.equal(registered.status, 201);
+    const { user } = await registered.json();
+    return { id: user.id, login: async () => {
+      const loggedIn = await api('auth/login', 'POST', body);
+      assert.equal(loggedIn.status, 200);
+      return loggedIn.headers.getSetCookie()[0].split(';')[0];
+    } };
+  }
+
+  const a = await account('a@example.test');
+  const b = await account('b@example.test');
+  const first = await a.login();
+  const second = await a.login();
+  const other = await b.login();
+  const patch = (body, cookie = first, origin) => api('auth/profile', 'PATCH', {
+    expectedUserId: a.id, ...body,
+  }, cookie, origin);
+  assert.equal((await api('auth/profile', 'PATCH', { theme: 'dark' }, first)).status, 400);
+  assert.equal((await patch({ theme: 'dark' }, other)).status, 409);
+  assert.equal((await patch({ theme: 'dark' }, '', url)).status, 401);
+  assert.equal((await patch({ theme: 'dark' }, first, 'https://foreign.example.test')).status, 403);
+  for (const body of [{}, { emailVerified: true }, { id: b.id }, { paydayDay: 32 }, { currency: 'USD' }, { amountMask: 'false' }]) {
+    assert.equal((await patch(body)).status, 400);
+  }
+  const preferences = {
+    displayName: 'Pessoa A', phone: '+55 11 5555-0101', paydayRule: 'fixed', paydayDay: 31,
+    theme: 'dark', carryOver: false, amountMask: false, currency: 'BRL',
+  };
+  const updated = await patch(preferences);
+  assert.equal(updated.status, 200);
+  const { user } = await updated.json();
+  for (const [key, value] of Object.entries(preferences)) assert.equal(user[key], value);
+  assert.ok(Date.parse(user.updatedAt) >= Date.parse(user.createdAt));
+  const session = async cookie => (await (await api('auth/session', 'GET', undefined, cookie)).json()).user;
+  assert.deepEqual(await session(second), user);
+  assert.equal((await session(other)).theme, 'light');
+
+  const payment = {
+    type: 'Despesa', category: 'Moradia', amount: 500, date: '2096-01-31', recurrence: 'Mensal',
+    receipt: { name: 'test.pdf', mimeType: 'application/pdf', dataBase64: Buffer.from('%PDF-1.4\n%%EOF\n').toString('base64') },
+  };
+  assert.equal((await api('transactions', 'POST', payment, first)).status, 201);
+  assert.equal((await api('transactions', 'POST', payment, other)).status, 201);
+  const purge = (confirm, cookie = first, origin) => api('user/account', 'DELETE', {
+    confirm, expectedUserId: a.id,
+  }, cookie, origin);
+  assert.equal((await api('user/account', 'DELETE', { confirm: true }, first)).status, 400);
+  assert.equal((await purge(true, other)).status, 409);
+  assert.equal((await purge(true, '')).status, 401);
+  assert.equal((await purge(true, first, 'https://foreign.example.test')).status, 403);
+  assert.equal((await purge(false)).status, 400);
+  assert.equal((await session(second)).id, a.id);
+  const removed = await purge(true);
+  assert.equal(removed.status, 204);
+  assert.ok(removed.headers.getSetCookie().every(cookie => cookie.includes('Max-Age=0')));
+  assert.equal((await api('auth/session', 'GET', undefined, first)).status, 401);
+  assert.equal((await api('auth/session', 'GET', undefined, second)).status, 401);
+  assert.equal((await purge(true)).status, 401);
+  assert.equal((await session(other)).id, b.id);
+
+  const db = new DatabaseSync(databasePath);
+  try {
+    for (const table of ['transactions', 'transaction_receipts', 'transaction_recurrences']) {
+      assert.equal(db.prepare('SELECT COUNT(*) AS count FROM ' + table).get().count, 1, table);
+    }
+    assert.deepEqual(db.prepare('SELECT id FROM users ORDER BY id').all().map(row => row.id), [b.id]);
+  } finally {
+    db.close();
+  }
+  assert.notEqual((await account('a@example.test')).id, a.id);
 });
