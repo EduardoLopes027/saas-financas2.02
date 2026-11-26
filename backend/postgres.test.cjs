@@ -201,7 +201,7 @@ test('PostgreSQL descartável com papel restrito: autenticação, Google OAuth, 
   assert.deepEqual(await dates(), ['2096-03-31', '2096-02-29', '2096-01-31']);
   assert.equal((await api(path, { method: 'DELETE', cookie: a })).status, 204);
   assert.equal((await api(path, { method: 'DELETE', cookie: a })).status, 404);
-  assert.equal((await api('auth/logout', { method: 'POST', cookie: a, body: {} })).status, 204);
+  assert.equal((await api('auth/logout', { method: 'POST', cookie: a, body: { expectedUserId: user.id } })).status, 204);
   assert.equal((await api('auth/session', { cookie: a })).status, 401);
   assert.equal((await api('auth/session', { cookie: b })).status, 200);
 
@@ -278,7 +278,7 @@ test('PostgreSQL descartável com papel restrito: autenticação, Google OAuth, 
     method: 'PATCH', cookie: newSession(repeat), body: { amount: 1 },
   })).status, 404);
   const revokedFlow = await authorize(existing, newSession(linked));
-  assert.equal((await api('auth/logout', { method: 'POST', cookie: newSession(linked), body: {} })).status, 204);
+  assert.equal((await api('auth/logout', { method: 'POST', cookie: newSession(linked), body: { expectedUserId: before.id } })).status, 204);
   assert.equal((await finish(...revokedFlow)).headers.get('location'), failed);
 
   const alive = newSession(await finish(...await authorize(existing)));

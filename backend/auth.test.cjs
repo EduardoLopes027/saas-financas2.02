@@ -75,9 +75,9 @@ test('cadastro, unicidade, login, sessão persistente, logout e proteção local
   assert.notEqual(newCookie, cookie);
   assert.equal((await api('session', { headers: { cookie } })).status, 401);
 
-  const loggedOut = await api('logout', { body: {}, headers: { cookie: newCookie } });
+  const loggedOut = await api('logout', { body: { expectedUserId: initialProfile.id }, headers: { cookie: newCookie } });
   assert.equal(loggedOut.status, 204);
-  assert.match(loggedOut.headers.get('set-cookie'), /Max-Age=0$/);
+  assert.deepEqual(loggedOut.headers.getSetCookie(), []);
   assert.equal((await api('session', { headers: { cookie: newCookie } })).status, 401);
 });
 
@@ -196,6 +196,12 @@ test('account settings persist and deletion purges only the authenticated owner'
   const session = async cookie => (await (await api('auth/session', 'GET', undefined, cookie)).json()).user;
   assert.deepEqual(await session(second), user);
   assert.equal((await session(other)).theme, 'light');
+  const staleLogout = await api('auth/logout', 'POST', { expectedUserId: a.id }, other);
+  assert.equal(staleLogout.status, 409);
+  assert.deepEqual(await staleLogout.json(), { error: 'account_changed' });
+  assert.deepEqual(staleLogout.headers.getSetCookie(), []);
+  assert.equal((await api('auth/logout', 'POST', {}, other)).status, 400);
+  assert.equal((await session(other)).id, b.id);
 
   const payment = {
     type: 'Despesa', category: 'Moradia', amount: 500, date: '2096-01-31', recurrence: 'Mensal',

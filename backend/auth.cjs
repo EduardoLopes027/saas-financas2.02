@@ -465,11 +465,16 @@ function createHandler(store, { secure = false, postgres = false, expectedOrigin
             'Cache-Control': 'no-store',
           }).end();
         }
-        case 'POST /api/auth/logout':
+        case 'POST /api/auth/logout': {
+          const user = await requireSession(request);
+          const body = await readJson(request);
+          confirmAccount(user, body?.expectedUserId);
           await store.deleteSession(sessionHash(request));
           return response.writeHead(204, {
-            'Set-Cookie': cookieHeaders('', 0, secure), 'Cache-Control': 'no-store',
+            // A later login may have already set a new cookie in another tab.
+            'Cache-Control': 'no-store',
           }).end();
+        }
         case 'GET /api/transactions': {
           const { id } = await requireSession(request);
           return json(response, 200, { items: await transactions.list(id) });

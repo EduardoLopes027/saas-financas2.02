@@ -141,7 +141,8 @@ test('lançamentos persistem e ficam isolados entre duas contas', async t => {
   assert.equal(deleted.status, 204);
   assert.equal((await api(download, { cookie: a.cookie })).status, 404);
 
-  const logout = await api('/api/auth/logout', { body: {}, cookie: a.cookie });
+  const sessionA = await (await api('/api/auth/session', { cookie: a.cookie })).json();
+  const logout = await api('/api/auth/logout', { body: { expectedUserId: sessionA.user.id }, cookie: a.cookie });
   assert.equal(logout.status, 204);
   assert.equal((await api(path, { cookie: a.cookie })).status, 401);
   assert.equal((await api(path, { cookie: a.cookie, body: expense })).status, 401);
@@ -332,7 +333,8 @@ test('DELETE valida sessão, origem e ID, remove com 204 e isola as contas', asy
   const withoutOrigin = await remove(second.id, { cookie: a });
   assert.equal(withoutOrigin.status, 204);
   assert.equal(await withoutOrigin.text(), '');
-  const logout = await api('/api/auth/logout', { method: 'POST', cookie: b, body: {} });
+  const sessionB = await (await api('/api/auth/session', { cookie: b })).json();
+  const logout = await api('/api/auth/logout', { method: 'POST', cookie: b, body: { expectedUserId: sessionB.user.id } });
   assert.equal(logout.status, 204);
   await error(await remove(other.id, { cookie: b }), 401, 'unauthenticated');
   assert.deepEqual(await items(a), []);

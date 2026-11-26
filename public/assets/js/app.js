@@ -879,12 +879,15 @@ async function restoreAccount(){
 
 async function logout(){
   if(authBusy || settingsWriting) return;
+  const owner = accountUser?.id || logoutProblem;
+  const startingEpoch = accountEpoch;
+  if(!owner) return;
   const state = preferenceState;
   if(state){
     await (state.saving ?? drainPreferences(state));
     if(preferenceState !== state) return;
   }
-  if(authBusy || settingsWriting) return;
+  if(authBusy || settingsWriting || accountEpoch !== startingEpoch) return;
   suspendedDraft=null;
   forgetAccount();
   const epoch=accountEpoch;
@@ -893,14 +896,25 @@ async function logout(){
   authNotice='';
   document.querySelector('.toolbar-settings').open=false;
   render(true);
+  let sessionChanged = false;
   try{
-    await apiRequest('/api/auth/logout',{});
-    accountChannel?.postMessage('account-changed');
-    if(location.hash!=='#login') location.hash='login';
-  }catch{
-    logoutProblem=true;
+    await apiRequest('/api/auth/logout',{expectedUserId:owner});
+  }catch(error){
+    if(epoch!==accountEpoch) return;
+    sessionChanged = error.status === 409;
+    if(!sessionChanged && error.status !== 401) logoutProblem=owner;
   }finally{
     if(epoch===accountEpoch) authBusy=false;
+  }
+  if(epoch!==accountEpoch) return;
+  if(sessionChanged){
+    await restoreAccount();
+    showSettingsToast('A sessão mudou. Confira qual conta está aberta.');
+    return;
+  }
+  if(!logoutProblem){
+    accountChannel?.postMessage('account-changed');
+    if(location.hash!=='#login') location.hash='login';
   }
   render(true);
 }
