@@ -18,7 +18,7 @@ Todas as rotas estão sob `/api/auth`. Envie JSON em todas as requisições POST
 | POST /register | `{ email, password, name?, salaryDay? }` | 201 e conta criada. Em seguida, faça login. |
 | POST /login | `{ email, password, remember? }` | 200 e conta. O navegador recebe o cookie. |
 | GET /session | — | 200 e conta da sessão. |
-| POST /logout | `{}` | 204. Revoga a sessão e expira o cookie. |
+| POST /logout | `{expectedUserId}` | 204. Revoga a sessão. Retorna 409 se a conta divergir da sessão atual. |
 
 O e-mail é normalizado para minúsculas e sem espaços nas pontas antes da verificação de unicidade. A senha tem pelo menos 15 caracteres no cadastro e aceita até 1.024 bytes. O cookie é HttpOnly e o navegador o envia automaticamente em chamadas de mesma origem. Use `GET /session` na abertura do app para restaurar o estado da sessão. O login substitui a sessão que o navegador apresentar. Com `remember: true`, a sessão e o cookie expiram em 30 dias. Com `false`, o cookie dura a sessão do navegador e o servidor limita a validade a sete dias. Ao omitir o campo, a validade do cookie e da sessão é de sete dias.
 
