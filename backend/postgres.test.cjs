@@ -81,13 +81,16 @@ test('PostgreSQL descartável com papel restrito: autenticação, Google OAuth, 
     await db.close();
   });
   await db.exec('CREATE ROLE anon; CREATE ROLE authenticated; CREATE ROLE service_role;');
-  const schema = await readFile(join(__dirname, '../supabase/schema.sql'), 'utf8');
+  const schema = (await readFile(join(__dirname, '../supabase/schema.sql'), 'utf8')).replaceAll('\\r\\n', '\\n');
+  const avatarMigration = await readFile(join(__dirname, '../supabase/migrations/20261127000000_account_avatar.sql'), 'utf8');
   const migration = await readFile(join(__dirname, '../supabase/migrations/20261126000000_account_settings.sql'), 'utf8');
   const profileStart = schema.indexOf('ALTER TABLE finflow_private.users\n  ADD COLUMN IF NOT EXISTS phone');
   assert.ok(profileStart > 0);
   await db.exec(schema.slice(0, profileStart) + 'COMMIT;');
   await db.exec(migration);
   await db.exec(migration);
+  await db.exec(avatarMigration);
+  await db.exec(avatarMigration);
   await db.exec(schema);
   const [permissions] = (await db.query(`
     SELECT has_schema_privilege('anon','finflow_private','USAGE') AS anon,
@@ -247,6 +250,7 @@ test('PostgreSQL descartável com papel restrito: autenticação, Google OAuth, 
   assert.equal(googleUser.salaryDay, '5-business');
   assert.equal(googleUser.emailVerified, true);
   assert.equal(googleUser.googleAvatarUrl, profile.picture);
+  assert.equal(googleUser.avatar_url, profile.picture);
   assert.ok(Date.parse(googleUser.googleLinkedAt));
   assert.equal((await finish(...firstFlow)).headers.get('location'), failed);
   const password = { email: profile.email, password: 'senha ficticia sem acesso' };
@@ -297,6 +301,27 @@ test('PostgreSQL descartável com papel restrito: autenticação, Google OAuth, 
   assert.equal(updated.emailVerified, true);
   assert.ok(Date.parse(updated.updatedAt) >= Date.parse(updated.createdAt));
   assert.deepEqual((await (await session(alive)).json()).user, updated);
+  assert.equal(updated.avatar_url, profile.picture);
+  const patchAvatar = (cookie, avatar_url) => api('user/profile', {
+    method: 'PATCH', body: { expectedUserId: googleUser.id, avatar_url }, cookie, parsed: true,
+  });
+  const image = await require('sharp')({ create: {
+    width: 2, height: 2, channels: 3, background: '#ef3e5b',
+  } }).png().toBuffer();
+  const upload = await patchAvatar(other, 'data:image/png;base64,' + image.toString('base64'));
+  assert.equal(upload.status, 200);
+  assert.match((await upload.json()).user.avatar_url, /^data:image\/webp;base64,/);
+  const custom = 'https://images.example.test/custom.webp';
+  assert.equal((await patchAvatar(other, custom)).status, 200);
+  const changedPicture = { ...profile, picture: 'https://lh3.googleusercontent.com/a/changed' };
+  let returning = newSession(await finish(...await authorize(changedPicture)));
+  assert.equal((await (await session(returning)).json()).user.avatar_url, custom);
+  assert.equal((await patchAvatar(returning, null)).status, 200);
+  returning = newSession(await finish(...await authorize(changedPicture)));
+  const afterRemoval = (await (await session(returning)).json()).user;
+  assert.equal(afterRemoval.avatar_url, null);
+  assert.equal(afterRemoval.googleAvatarUrl, null);
+  assert.equal(afterRemoval.googleLinked, true);
   assert.equal((await (await session(other)).json()).user.theme, 'light');
 
   assert.equal((await create({ recurrence: 'Mensal', receipt, paymentMethod: 'Pix' }, alive)).status, 201);

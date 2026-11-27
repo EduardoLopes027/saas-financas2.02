@@ -141,6 +141,10 @@ test('account settings persist and deletion purges only the authenticated owner'
   const directory = await mkdtemp(join(tmpdir(), 'finflow-settings-'));
   const databasePath = join(directory, 'test.sqlite');
   const { DatabaseSync } = require('node:sqlite');
+  const legacy = new DatabaseSync(databasePath);
+  legacy.exec(`CREATE TABLE users (id INTEGER PRIMARY KEY, email TEXT NOT NULL UNIQUE,
+    password_salt BLOB NOT NULL, password_hash BLOB NOT NULL) STRICT`);
+  legacy.close();
   const { server, url } = await start({ port: 0, databasePath });
   t.after(async () => {
     await close(server);
@@ -196,6 +200,50 @@ test('account settings persist and deletion purges only the authenticated owner'
   const session = async cookie => (await (await api('auth/session', 'GET', undefined, cookie)).json()).user;
   assert.deepEqual(await session(second), user);
   assert.equal((await session(other)).theme, 'light');
+  assert.equal(user.avatar_url, null);
+  const saveAvatar = (avatar_url, cookie = first, origin = url) => api('user/profile', 'PATCH', {
+    expectedUserId: a.id, avatar_url,
+  }, cookie, origin);
+  const sharp = require('sharp');
+  const image = () => sharp({ create: { width: 2, height: 2, channels: 3, background: '#ef3e5b' } });
+  for (const type of ['png', 'jpeg', 'webp']) {
+    const bytes = await image()[type]().toBuffer();
+    const data = 'data:image/' + type + ';base64,';
+    const valid = data + bytes.toString('base64');
+    assert.equal((await saveAvatar(valid, other)).status, 409);
+    assert.equal((await saveAvatar(valid, first, 'https://foreign.example.test')).status, 403);
+    const saved = await saveAvatar(valid);
+    assert.equal(saved.status, 200, type);
+    const stored = (await saved.json()).user.avatar_url;
+    assert.match(stored, /^data:image\/webp;base64,/);
+    assert.equal((await session(second)).avatar_url, stored);
+    assert.equal((await session(other)).avatar_url, null);
+    assert.equal((await saveAvatar(data + bytes.subarray(0, -1).toString('base64'))).status, 400, type);
+  }
+  const png = await image().png().toBuffer();
+  const apng = Buffer.concat([png.subarray(0, 33), Buffer.from('000000086163544c000000020000000000000000','hex'), png.subarray(33)]);
+  const animated = await sharp(Buffer.from([255,0,0,0,0,255]), {
+    raw: { width: 1, height: 2, channels: 3, pageHeight: 1 },
+  }).webp().toBuffer();
+  assert.equal((await sharp(animated).metadata()).pages, 2);
+  for (const invalid of [false, 'http://example.test/photo.png', 'https://user@example.test/photo.png',
+    'https://example.test/photo%2esvg', 'javascript:alert(1)', 'data:image/svg+xml;base64,PHN2Zz4=',
+    'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7',
+    'data:image/png;base64,AB==', 'data:image/png;base64,' + png.toString('base64') + '\\n',
+    'data:image/webp;base64,' + png.toString('base64'), 'data:image/png;base64,' + apng.toString('base64'),
+    'data:image/webp;base64,' + animated.toString('base64'),
+  ]) assert.equal((await saveAvatar(invalid)).status, 400);
+  const oversizedRaster = await sharp({ create: {
+    width: 4097, height: 1, channels: 3, background: 'white',
+  } }).png().toBuffer();
+  assert.equal((await saveAvatar('data:image/png;base64,' + oversizedRaster.toString('base64'))).status, 400);
+  assert.equal((await saveAvatar('data:image/png;base64,' + Buffer.alloc(512 * 1024 + 1).toString('base64'))).status, 400);
+  assert.equal((await saveAvatar('a'.repeat(710_000))).status, 413);
+  const custom = 'https://images.example.test/photo.png';
+  assert.equal((await patch({ avatar_url: custom })).status, 200);
+  assert.equal((await session(second)).avatar_url, custom);
+  assert.equal((await saveAvatar(null)).status, 200);
+  assert.equal((await session(second)).avatar_url, null);
   const staleLogout = await api('auth/logout', 'POST', { expectedUserId: a.id }, other);
   assert.equal(staleLogout.status, 409);
   assert.deepEqual(await staleLogout.json(), { error: 'account_changed' });

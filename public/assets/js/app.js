@@ -781,6 +781,7 @@ function requireTransaction(item){
 
 function forgetAccount(){
   accountEpoch++;
+  avatarChange = null;
   preferenceState=null;
   accountUser=null;
   accountState='idle';
@@ -878,6 +879,12 @@ async function restoreAccount(){
 }
 
 async function logout(){
+  const photo = avatarChange;
+  if(photo?.saving){
+    const epoch = accountEpoch;
+    await photo.saving;
+    if(epoch !== accountEpoch) return;
+  }
   if(authBusy || settingsWriting) return;
   const owner = accountUser?.id || logoutProblem;
   const startingEpoch = accountEpoch;
@@ -920,6 +927,7 @@ async function logout(){
 }
 
 let settingsWriting = false;
+let avatarChange = null;
 let preferenceState = null;
 let settingsToastTimer;
 
@@ -954,12 +962,222 @@ function showPreferenceStatus(state){
 
 function applySettingsProfile(updated){
   accountUser = updated;
+  updateAccountAvatars();
   if(!Object.hasOwn(preferenceState?.pending ?? {},'theme')) updateAccountChrome(false);
   const stamp = main.querySelector('[data-settings-sync]');
   if(stamp){
     stamp.textContent=accountDate(updated.updatedAt,{dateStyle:'short',timeStyle:'short'});
     stamp.parentElement.hidden=!stamp.textContent;
   }
+}
+
+function avatarSource(value){
+  if(typeof value !== 'string') return '';
+  if(/^data:image\/(?:jpeg|png|webp);base64,[a-z\d+/]+={0,2}$/i.test(value)) return value;
+  try{
+    const url = new URL(value);
+    if(url.protocol === 'https:' && !url.username && !url.password) return url.href;
+  }catch{
+    // Missing or invalid photos use the initials.
+  }
+  return '';
+}
+
+function updateAccountAvatars(){
+  const initials = accountInitials(accountName());
+  const source = avatarSource(avatarChange?.preview === undefined ? accountUser?.avatar_url : avatarChange.preview);
+  document.querySelectorAll('[data-account-avatar]').forEach(slot=>{
+    slot.firstChild.nodeValue = initials;
+    const previous = slot.querySelector('img');
+    if(previous?.getAttribute('src') === source) return;
+    previous?.remove();
+    if(!source) return;
+    const image = document.createElement('img');
+    image.alt = '';
+    image.hidden = true;
+    image.referrerPolicy = 'no-referrer';
+    image.addEventListener('load',()=>{image.hidden = false;},{once:true});
+    image.addEventListener('error',()=>{image.hidden = true;},{once:true});
+    image.src = source;
+    slot.append(image);
+  });
+}
+
+function avatarDimensions(bytes, type){
+  // Read container headers before the browser allocates a decoded image.
+  const view = new DataView(bytes);
+  const size = view.byteLength;
+  if(type === 'image/png'){
+    if(size < 33 || view.getBigUint64(0) !== 0x89504e470d0a1a0an
+      || view.getUint32(8) !== 13 || view.getUint32(12) !== 0x49484452) return;
+    for(let offset = 8; offset + 12 <= size;){
+      const length = view.getUint32(offset);
+      const chunk = view.getUint32(offset + 4);
+      if(chunk === 0x6163544c || offset + length + 12 > size) return;
+      if(chunk === 0x49454e44) return [view.getUint32(16),view.getUint32(20)];
+      offset += length + 12;
+    }
+  }
+  if(type === 'image/jpeg'){
+    if(size < 13 || view.getUint16(0) !== 0xffd8) return;
+    for(let offset = 2; offset + 4 <= size;){
+      if(view.getUint8(offset++) !== 0xff) return;
+      while(offset < size && view.getUint8(offset) === 0xff) offset++;
+      if(offset + 3 > size) return;
+      const marker = view.getUint8(offset++);
+      const length = view.getUint16(offset);
+      if(marker === 0xda || length < 2 || offset + length > size) return;
+      if([0xc0,0xc1,0xc2].includes(marker) && length >= 8){
+        return [view.getUint16(offset + 5),view.getUint16(offset + 3)];
+      }
+      offset += length;
+    }
+  }
+  if(type === 'image/webp'){
+    if(size < 26 || view.getUint32(0) !== 0x52494646 || view.getUint32(8) !== 0x57454250
+      || view.getUint32(4,true) !== size - 8) return;
+    let canvasSize;
+    let frame;
+    for(let offset = 12; offset + 8 <= size;){
+      const chunk = view.getUint32(offset);
+      const length = view.getUint32(offset + 4,true);
+      const start = offset + 8;
+      offset = start + length + length % 2;
+      if(offset > size || chunk === 0x414e494d || chunk === 0x414e4d46) return;
+      if(chunk === 0x56503858 && length === 10){
+        if(canvasSize || (view.getUint8(start) & 2)) return;
+        canvasSize = [(view.getUint32(start + 4,true) & 0xffffff) + 1,
+          (view.getUint32(start + 6,true) >>> 8) + 1];
+      }
+      if(chunk === 0x5650384c && length >= 5 && view.getUint8(start) === 0x2f){
+        if(frame) return;
+        const bits = view.getUint32(start + 1,true);
+        frame = [(bits & 0x3fff) + 1,((bits >>> 14) & 0x3fff) + 1];
+      }
+      if(chunk === 0x56503820 && length >= 10 && (view.getUint32(start + 2,true) >>> 8) === 0x2a019d){
+        if(frame) return;
+        frame = [view.getUint16(start + 6,true) & 0x3fff,view.getUint16(start + 8,true) & 0x3fff];
+      }
+    }
+    if(frame && (!canvasSize || frame.every((side,index)=>side === canvasSize[index]))) return frame;
+  }
+}
+
+async function prepareAvatar(file){
+  if(!['image/jpeg','image/png','image/webp'].includes(file.type) || !file.size || file.size > 2 * 1024 * 1024){
+    throw new Error('Escolha uma foto JPEG, PNG ou WebP de até 2 MB.');
+  }
+  const dimensions = avatarDimensions(await file.arrayBuffer(),file.type);
+  if(!dimensions) throw new Error('Escolha uma foto válida e sem animação.');
+  const [width,height] = dimensions;
+  if(!width || !height || width > 4096 || height > 4096 || width * height > 8_388_608){
+    throw new Error('Escolha uma foto de até 4096 pixels por lado e 8.388.608 pixels no total.');
+  }
+  const url = URL.createObjectURL(file);
+  try{
+    const image = new Image();
+    image.src = url;
+    await image.decode();
+    const canvas = document.createElement('canvas');
+    canvas.width = canvas.height = 256;
+    const context = canvas.getContext('2d');
+    const edge = Math.min(image.naturalWidth,image.naturalHeight);
+    context.fillStyle = '#fff';
+    context.fillRect(0,0,256,256);
+    context.drawImage(image,(image.naturalWidth-edge)/2,(image.naturalHeight-edge)/2,edge,edge,0,0,256,256);
+    const webp = canvas.toDataURL('image/webp',.84);
+    return webp.startsWith('data:image/webp;') ? webp : canvas.toDataURL('image/jpeg',.84);
+  }catch{
+    throw new Error('Não foi possível abrir essa foto. Escolha outro arquivo.');
+  }finally{
+    URL.revokeObjectURL(url);
+  }
+}
+
+function updateAvatarControls(){
+  const editor = main.querySelector('[data-avatar-editor]');
+  if(!editor) return;
+  const busy = Boolean(avatarChange?.saving);
+  editor.setAttribute('aria-busy',String(busy));
+  editor.querySelectorAll('button').forEach(button=>{button.disabled = busy;});
+  editor.querySelector('[data-avatar-remove]').hidden = !avatarSource(accountUser?.avatar_url);
+  main.querySelector('[data-avatar-progress]').textContent = busy ? 'Salvando foto…' : '';
+  main.querySelector('[data-avatar-error]').textContent = avatarChange?.error ?? '';
+}
+
+function wireAvatar(root, owner){
+  updateAccountAvatars();
+  if(!owner) return;
+  const epoch = accountEpoch;
+  const input = root.querySelector('[data-avatar-input]');
+  const choose = root.querySelector('[data-avatar-choose]');
+  const remove = root.querySelector('[data-avatar-remove]');
+  updateAvatarControls();
+  const save = (file, trigger)=>{
+    if(epoch !== accountEpoch || accountUser?.id !== owner) return;
+    if(settingsWriting || authBusy){
+      if(!avatarChange?.saving){
+        avatarChange = {error:'Aguarde a ação em andamento e tente novamente.'};
+        updateAvatarControls();
+      }
+      return;
+    }
+    const change = {};
+    avatarChange = change;
+    settingsWriting = true;
+    clearTimeout(settingsToastTimer);
+    root.querySelector('.settings-toast').textContent = '';
+    change.saving = (async()=>{
+      let value;
+      try{
+        value = file ? await prepareAvatar(file) : null;
+      }catch(error){
+        change.error = error.message;
+        return;
+      }
+      if(epoch !== accountEpoch) return;
+      change.preview = value;
+      updateAccountAvatars();
+      try{
+        await preferenceState?.saving;
+        if(epoch !== accountEpoch) return;
+        const updated = requireAccountUser(await apiRequest('/api/user/profile',{avatar_url:value,expectedUserId:owner},'PATCH'));
+        if(epoch !== accountEpoch) return;
+        if(updated.id !== owner) throw new Error('Invalid account response');
+        delete change.preview;
+        applySettingsProfile(updated);
+        showSettingsToast(file ? 'Foto atualizada.' : 'Foto removida.');
+      }catch(error){
+        if(epoch !== accountEpoch || await handleSettingsSessionError(error)) return;
+        change.error = file ? 'Não foi possível salvar a foto. Selecione o arquivo para tentar novamente.'
+          : 'Não foi possível remover a foto. Tente novamente.';
+      }
+    })().finally(()=>{
+      settingsWriting = false;
+      change.saving = null;
+      delete change.preview;
+      if(epoch === accountEpoch){
+        updateAccountAvatars();
+        updateAvatarControls();
+        if(trigger?.isConnected && document.activeElement === document.body){
+          (trigger.hidden ? choose : trigger).focus({preventScroll:true});
+        }
+      }
+      drainPreferences(preferenceState);
+    });
+    updateAvatarControls();
+  };
+  let pickerTrigger;
+  root.querySelectorAll('[data-avatar-picker]').forEach(button=>button.addEventListener('click',()=>{
+    pickerTrigger = button;
+    input.click();
+  }));
+  input.addEventListener('change',()=>{
+    const file = input.files[0];
+    input.value = '';
+    if(file) save(file,pickerTrigger);
+  });
+  remove.addEventListener('click',()=>save(null,remove));
 }
 
 async function handleSettingsSessionError(error){
@@ -1035,11 +1253,11 @@ function mountSettings(focus){
   const checked = value => value ? ' checked' : '';
   const fifth = user?.paydayRule === 'fifth_business_day'
     || !user?.paydayRule && ['5','5-business'].includes(user?.salaryDay);
-  const avatar = /^https:\/\/lh[0-9]+\.googleusercontent\.com\//i.test(user?.googleAvatarUrl ?? '') ? user.googleAvatarUrl : '';
   const joined = accountDate(user?.createdAt,{month:'long',year:'numeric',timeZone:'UTC'});
   const synced = accountDate(user?.updatedAt,{dateStyle:'short',timeStyle:'short'});
   const paths = {
     "badge": "M8 7V4h8v3 M5 7h14a2 2 0 0 1 2 2v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a2 2 0 0 1 2-2Z M7 15h4m3-3h3m-3 4h3 M9 12h.01",
+    "camera": "M3 7h4l2-3h6l2 3h4v13H3Z M16 13a4 4 0 1 1-8 0 4 4 0 0 1 8 0Z",
     "check": "m5 12 4 4L19 6",
     "link": "M10 13a4 4 0 0 0 6 0l3-3a4 4 0 0 0-6-6l-2 2m3 5a4 4 0 0 0-6 0l-3 3a4 4 0 0 0 6 6l2-2",
     "account_balance": "m3 9 9-5 9 5H3Zm2 11h14M7 12v5m5-5v5m5-5v5",
@@ -1064,12 +1282,20 @@ function mountSettings(focus){
       <section class="settings-card" aria-labelledby="settings-profile">
         <h2 id="settings-profile" tabindex="-1">${icon('badge')} Informações Pessoais</h2>
         <p>Atualize os dados exibidos no seu painel.</p>
-        <div class="settings-identity">
-          <span class="settings-avatar" aria-hidden="true" data-settings-initials>${escape(accountInitials(name))}${avatar ? '<img src="'+escape(avatar)+'" alt="" referrerpolicy="no-referrer" hidden>' : ''}</span>
-          <div><strong data-settings-name>${escape(name)}</strong> ${user ? '<span class="settings-status">Conta ativa</span>' : ''}
+        <div class="settings-identity" ${user ? 'data-avatar-editor' : ''}>
+          ${user ? '<button type="button" class="settings-avatar-trigger" data-avatar-picker aria-label="Alterar foto do perfil">' : ''}
+          <span class="settings-avatar" aria-hidden="true" data-account-avatar>${escape(accountInitials(name))}</span>
+          ${user ? '</button>' : ''}
+          <div class="settings-identity-details"><strong data-settings-name>${escape(name)}</strong> ${user ? '<span class="settings-status">Conta ativa</span>' : ''}
             ${user ? '<small>'+escape(user.email)+'</small>' : ''}
             ${joined ? '<small>Membro desde '+escape(joined)+'</small>' : ''}</div>
+          ${user ? `<div class="settings-avatar-actions">
+            <input type="file" data-avatar-input accept="image/jpeg,image/png,image/webp" hidden>
+            <button type="button" data-avatar-picker data-avatar-choose>${icon('camera')} Alterar foto</button>
+            <button type="button" data-avatar-remove hidden>Remover</button>
+          </div>` : ''}
         </div>
+        ${user ? '<p class="settings-avatar-feedback" role="status" data-avatar-progress></p><p class="settings-feedback settings-avatar-feedback" role="alert" data-avatar-error></p>' : ''}
         <form id="settings-profile-form">
           <fieldset ${locked}>
             <div class="settings-fields">
@@ -1164,12 +1390,7 @@ function mountSettings(focus){
 function wireSettings(){
   const expectedUserId = accountUser?.id;
   const root = main.querySelector('.settings-content');
-  const avatar = root.querySelector('.settings-identity img');
-  if(avatar){
-    const reveal = () => {avatar.hidden = false;};
-    if(avatar.complete && avatar.naturalWidth) reveal();
-    else avatar.addEventListener('load',reveal,{once:true});
-  }
+  wireAvatar(root,expectedUserId);
   const profile = root.querySelector('#settings-profile-form');
   const preferences = root.querySelector('#settings-preferences-form');
   const deletion = root.querySelector('#settings-delete-form');
@@ -1218,7 +1439,7 @@ function wireSettings(){
     deletion.querySelector('.settings-feedback').textContent='';
   });
   root.querySelector('[data-settings-logout]')?.addEventListener('click',()=>{
-    if(!settingsWriting) logout();
+    logout();
   });
   root.querySelectorAll('[data-settings-target]').forEach(button=>button.addEventListener('focus',()=>{
     button.scrollIntoView({block:'nearest',inline:'nearest'});
@@ -1231,6 +1452,9 @@ function wireSettings(){
 
   const submit = (form, save, busyText, errorText) => form.addEventListener('submit',async event=>{
     event.preventDefault();
+    const openingEpoch = accountEpoch;
+    if(avatarChange?.saving) await avatarChange.saving;
+    if(openingEpoch !== accountEpoch || !form.isConnected) return;
     if(!expectedUserId || accountUser?.id !== expectedUserId || settingsWriting) return;
     const epoch = accountEpoch;
     const owner = accountUser.id;
@@ -1270,8 +1494,6 @@ function wireSettings(){
       if(!root.isConnected) return;
       const title = accountName();
       root.querySelector('[data-settings-name]').textContent=title;
-      const initials = root.querySelector('[data-settings-initials]');
-      initials.firstChild.nodeValue=accountInitials(title);
       showSettingsToast(notice);
     };
   };
@@ -1306,7 +1528,7 @@ function updateAccountChrome(authPreview){
   }
   document.querySelector('[data-mobile-menu]').setAttribute('aria-label', appMode==='demo' ? 'Configurações do protótipo' : 'Configurações da conta');
   document.querySelector('[data-account-name]').textContent = accountName();
-  document.querySelector('[data-account-initials]').textContent = accountInitials(accountName());
+  updateAccountAvatars();
   document.body.classList.toggle('account-mode',appMode!=='demo');
   document.body.classList.toggle('account-gated',authPreview||(appMode!=='demo'&&!accountUser));
   accountTools.hidden=!accountUser;

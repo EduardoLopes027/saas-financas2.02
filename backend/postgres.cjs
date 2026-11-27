@@ -135,7 +135,7 @@ async function postgresStore(databaseUrl, ca) {
 function createStore(sql) {
   const activeUserId = `SELECT user_id FROM ${schema}.sessions WHERE token_hash = $1 AND expires_at > $2`;
   const profileColumns = `u.id, u.email, u.name, u.salary_day, u.phone, u.payday_rule, u.payday_day,
-    u.theme, u.carry_over, u.amount_mask, u.currency, u.created_at, u.updated_at,
+    u.theme, u.carry_over, u.amount_mask, u.currency, u.created_at, u.updated_at, u.avatar_url, u.avatar_google_suppressed,
     g.created_at AS google_linked_at, g.verified_email AS google_email, g.avatar_url AS google_avatar_url`;
   const googleJoin = `LEFT JOIN ${schema}.google_identities g ON g.user_id = u.id`;
   return {
@@ -217,6 +217,11 @@ function createStore(sql) {
         } else {
           await query.unsafe(`UPDATE ${schema}.google_identities SET verified_email=$2, avatar_url=$3 WHERE subject=$1`,
             [identity.subject, identity.email, identity.avatarUrl ?? null]);
+        }
+        if (identity.avatarUrl) {
+          await query.unsafe(`UPDATE ${schema}.users SET avatar_url=$2, updated_at=clock_timestamp()
+            WHERE id=$1 AND email=$3 AND avatar_url IS NULL AND NOT avatar_google_suppressed`,
+          [userId, identity.avatarUrl, identity.email]);
         }
         await query.unsafe(`DELETE FROM ${schema}.sessions WHERE token_hash=$1 OR expires_at<=$2`, [previous, now]);
         await query.unsafe(`INSERT INTO ${schema}.sessions (token_hash,user_id,expires_at) VALUES ($1,$2,$3)`,

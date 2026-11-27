@@ -14,6 +14,7 @@
     { "source": "/api/auth/google/callback", "destination": "/api/index?__route=auth/google/callback" },
     { "source": "/api/auth/google/link", "destination": "/api/index?__route=auth/google/link" },
     { "source": "/api/auth/:action", "destination": "/api/index?__route=auth/:action" },
+    { "source": "/api/user/profile", "destination": "/api/index?__route=user/profile" },
     { "source": "/api/user/account", "destination": "/api/index?__route=user/account" },
     { "source": "/api/transactions", "destination": "/api/index?__route=transactions" },
     { "source": "/api/transactions/:id", "destination": "/api/index?__route=transactions/:id" },

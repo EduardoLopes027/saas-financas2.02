@@ -107,3 +107,11 @@ O vínculo usa o identificador permanente do Google. Uma conta criada via OAuth 
 - A verificação de e-mail só é exibida quando o endereço verificado pelo Google coincide com o endereço FinFlow. Vínculos anteriores à migração podem registrar essa evidência no próximo login via Google.
 
 Em uma instalação Supabase existente, aplique `supabase/migrations/20261126000000_account_settings.sql` antes de publicar a API. Se a migração Google OAuth ainda estiver pendente, aplique-a primeiro. Instalações novas podem usar `supabase/schema.sql`. Confirme a concessão de `finflow_runtime` ao login `finflow_app` e o encaminhamento de `/api/auth/profile` e `/api/user/account` para a função Vercel.
+
+### Avatar da conta
+
+- `PATCH /api/user/profile` e `PATCH /api/auth/profile` aceitam `{expectedUserId, avatar_url}` junto aos campos de perfil existentes. Ambos retornam `{user}`. A sessão retorna `user.avatar_url`, que pode ser nulo.
+- O upload aceita data URLs com JPEG, PNG ou WebP estáticos, até 512 KiB de arquivo, 4096 pixels por lado e 8.388.608 pixels no total. O servidor decodifica e converte o upload para WebP de até 256 pixels por lado, sem os metadados originais. O limite do corpo JSON é 703.148 bytes. Se as duas vagas de processamento estiverem ocupadas, o cliente pode tentar novamente após receber `503 avatar_processing_busy`.
+- URLs HTTPS sem credenciais são aceitas sem fetch no servidor. O conteúdo remoto e seu MIME não são verificados. A interface deve usar o endereço somente como origem de uma imagem e omitir o referenciador.
+- O login Google importa a foto verificada somente para uma conta ainda sem avatar, com e-mail Google correspondente ao da conta. Fotos personalizadas são preservadas. Enviar `null` remove o avatar do perfil e desativa a importação automática. Os metadados do vínculo Google permanecem associados à identidade até a exclusão da conta.
+- Em Supabase existente, aplique `supabase/migrations/20261127000000_account_avatar.sql` depois da migração de Configurações e antes de publicar a API. A migração acrescenta duas colunas à tabela privada de usuários e concede somente seu UPDATE ao papel `finflow_runtime`. SQLite amplia a tabela local na primeira inicialização. Para Vercel, encaminhe também `/api/user/profile` e instale as dependências opcionais de plataforma do `sharp`.

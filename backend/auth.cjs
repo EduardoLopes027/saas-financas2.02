@@ -8,6 +8,7 @@ const { promisify } = require('node:util');
 const { transactionFields, transactionStore, MAX_TRANSACTION_BODY } = require('./transactions.cjs');
 const { callbackPath, challenge, failure, flowCookie, newFlow, readFlow, redirect } = require('./google-oauth.cjs');
 
+const { AvatarBusyError, MAX_PROFILE_BODY } = require('./avatar.cjs');
 const { profileUpdates, userProfile } = require('./account-settings.cjs');
 
 const deriveKey = promisify(scrypt);
@@ -160,6 +161,7 @@ async function sqliteStore(databasePath) {
       theme: "TEXT NOT NULL DEFAULT 'light'", carry_over: 'INTEGER NOT NULL DEFAULT 1',
       amount_mask: 'INTEGER NOT NULL DEFAULT 1', currency: "TEXT NOT NULL DEFAULT 'BRL'",
       created_at: 'TEXT', updated_at: 'TEXT',
+      avatar_url: 'TEXT', avatar_google_suppressed: 'INTEGER NOT NULL DEFAULT 0',
     };
     for (const [column, definition] of Object.entries(profileColumns)) {
       if (!columns.some(existing => existing.name === column)) {
@@ -378,7 +380,7 @@ function createHandler(store, { secure = false, postgres = false, expectedOrigin
         && pathname.endsWith('/receipt');
       const updateTransaction = request.method === 'PATCH' && pathname.startsWith('/api/transactions/');
       const jsonPost = route.startsWith('POST /api/auth/') || route === 'POST /api/transactions' || updateTransaction;
-      const accountMutation = route === 'PATCH /api/auth/profile' || route === 'DELETE /api/user/account';
+      const accountMutation = ['PATCH /api/auth/profile', 'PATCH /api/user/profile', 'DELETE /api/user/account'].includes(route);
       if (jsonPost || deleteTransaction || accountMutation) {
         if ((secure || request.headers.origin !== undefined) && request.headers.origin !== origin) {
           throw new HttpError(403, 'origin_not_allowed');
@@ -439,13 +441,14 @@ function createHandler(store, { secure = false, postgres = false, expectedOrigin
           return await authenticate(request, response, false);
         case 'GET /api/auth/session':
           return json(response, 200, { user: await requireSession(request) });
-        case 'PATCH /api/auth/profile': {
+        case 'PATCH /api/auth/profile':
+        case 'PATCH /api/user/profile': {
           const user = await requireSession(request);
-          const body = await readJson(request);
+          const body = await readJson(request, MAX_PROFILE_BODY);
           if (!body || typeof body !== 'object' || Array.isArray(body)) throw new HttpError(400, 'invalid_profile');
           const { expectedUserId, ...fields } = body;
           confirmAccount(user, expectedUserId);
-          const updates = profileUpdates(fields);
+          const updates = await profileUpdates(fields);
           if (!updates) throw new HttpError(400, 'invalid_profile');
           const updated = await store.updateProfile(sessionHash(request), Date.now(), updates);
           if (!updated) throw new HttpError(401, 'unauthenticated');
@@ -497,6 +500,7 @@ function createHandler(store, { secure = false, postgres = false, expectedOrigin
         'Content-Type': asset[1], 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff',
       }).end(content);
     } catch (error) {
+      if (error instanceof AvatarBusyError) return json(response, 503, { error: 'avatar_processing_busy' });
       if (error instanceof HttpError) {
         if (!secure && error.status === 413) response.setHeader('Connection', 'close');
         return json(response, error.status, { error: error.message });

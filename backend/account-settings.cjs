@@ -1,5 +1,7 @@
 'use strict';
 
+const { normalizeAvatar } = require('./avatar.cjs');
+
 const columns = {
   displayName: 'name',
   phone: 'phone',
@@ -23,15 +25,22 @@ const validators = {
   currency: value => value === 'BRL',
 };
 
-function profileUpdates(body) {
+async function profileUpdates(body) {
   if (!body || typeof body !== 'object' || Array.isArray(body)) return undefined;
   const entries = Object.entries(body);
-  if (!entries.length || entries.some(([key, value]) => !Object.hasOwn(validators, key) || !validators[key](value))) {
-    return undefined;
+  if (!entries.length) return undefined;
+  const updates = [];
+  for (const [key, value] of entries) {
+    if (key === 'avatar_url') continue;
+    if (!Object.hasOwn(validators, key) || !validators[key](value)) return undefined;
+    updates.push([columns[key], typeof value === 'string' ? value.trim() : value]);
   }
-  return entries.map(([key, value]) => [
-    columns[key], typeof value === 'string' ? value.trim() : value,
-  ]);
+  if (Object.hasOwn(body, 'avatar_url')) {
+    const avatar = await normalizeAvatar(body.avatar_url);
+    if (avatar === undefined) return undefined;
+    updates.push(['avatar_url', avatar], ['avatar_google_suppressed', avatar === null]);
+  }
+  return updates;
 }
 
 function userProfile(user, googleAvailable) {
@@ -50,10 +59,11 @@ function userProfile(user, googleAvailable) {
     paydayRule, paydayDay, theme: user.theme, carryOver: Boolean(user.carry_over),
     amountMask: Boolean(user.amount_mask), currency: user.currency,
     createdAt: user.created_at ?? null, updatedAt: user.updated_at ?? user.created_at ?? null,
+    avatar_url: user.avatar_url ?? null,
     emailVerified, googleAvailable, googleLinked,
     googleEmail: googleLinked ? user.google_email : null,
     googleLinkedAt: user.google_linked_at ?? null,
-    googleAvatarUrl: emailVerified ? user.google_avatar_url : null,
+    googleAvatarUrl: emailVerified && !user.avatar_google_suppressed ? user.google_avatar_url : null,
   };
 }
 
