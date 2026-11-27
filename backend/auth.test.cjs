@@ -33,6 +33,9 @@ test('cadastro, unicidade, login, sessão persistente, logout e proteção local
 
   assert.equal((await fetch(app.url + '/')).status, 200);
   assert.equal((await api('session')).status, 401);
+  const recoveryUnavailable = await api('forgot-password', { body: { email: credentials.email } });
+  assert.equal(recoveryUnavailable.status, 503);
+  assert.deepEqual(await recoveryUnavailable.json(), { error: 'recovery_unavailable' });
   assert.equal((await api('register', { body: credentials, headers: { Origin: 'https://example.test' } })).status, 403);
   assert.equal((await api('register', { body: { ...credentials, password: 'curta' } })).status, 400);
 

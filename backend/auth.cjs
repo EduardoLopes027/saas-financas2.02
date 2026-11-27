@@ -326,10 +326,11 @@ function createHandler(store, { secure = false, postgres = false, expectedOrigin
   }
 
   async function forgotPassword(request, response) {
+    if (!secure || !recovery) throw new HttpError(503, 'recovery_unavailable');
     const body = await readJson(request);
     const email = typeof body?.email === 'string' ? body.email.trim().toLowerCase() : '';
     const accepted = () => json(response, 202, { ok: true });
-    if (!secure || !recovery || email.length > 254 || !/^[^\s@\x00-\x1f]+@[^\s@\x00-\x1f]+\.[^\s@\x00-\x1f]+$/.test(email)) {
+    if (email.length > 254 || !/^[^\s@\x00-\x1f]+@[^\s@\x00-\x1f]+\.[^\s@\x00-\x1f]+$/.test(email)) {
       return accepted();
     }
     try {

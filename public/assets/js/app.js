@@ -1691,6 +1691,7 @@ function mountRecovery(authPreview){
     }catch(failure){
       if(!active()) return;
       if(reset && failure.status===401) showInvalidGrant(true);
+      else if(!reset && failure.status===503) error.textContent='A recuperação de senha está indisponível no momento.';
       else if(failure.status===429) error.textContent='Muitas tentativas. Aguarde e tente novamente.';
       else if(reset && failure.status===400) error.textContent='Confira a nova senha e tente novamente.';
       else error.textContent=reset ? 'Não foi possível salvar a nova senha. Tente novamente.'
