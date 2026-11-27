@@ -41,13 +41,16 @@ let saveBusy = false;
 let sessionProblem = false;
 let logoutProblem = false;
 let authNotice = '';
+let recoveryEmail = '';
+let recoverySucceeded = false;
 const authLocation = new URL(location.href);
 const googleError = authLocation.searchParams.get('auth_error');
+let recoveryLinkFailed = googleError === 'recovery_failed';
 const googleFailure = 'Não foi possível continuar com o Google. Tente novamente ou entre com seu e-mail.';
 let googleNotice = googleError === 'google_link_required'
   ? 'Já existe uma conta com esse e-mail. Entre com sua senha e escolha Vincular conta Google em Configurações.'
   : googleError === 'google_failed' ? googleFailure : '';
-if(googleError && googleNotice){
+if(googleNotice || recoveryLinkFailed){
   authLocation.searchParams.delete('auth_error');
   history.replaceState(history.state,'',authLocation);
 }
@@ -1539,6 +1542,168 @@ function updateAccountChrome(authPreview){
   if(!accountUser && !authBusy) googleLinkStatus.textContent='';
 }
 
+const recoveryRoute = () => ['#recuperar-senha','#redefinir-senha'].includes(location.hash);
+const invalidRecovery = 'Este link é inválido ou expirou. Solicite um novo link de recuperação.';
+
+function wireRecoveryPassword(button){
+  const field = document.getElementById(button.getAttribute('aria-controls'));
+  const label = button.getAttribute('aria-label').slice('Mostrar '.length);
+  const icon = '<svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12Z"/><circle cx="12" cy="12" r="2.5"/><path class="auth-eye-slash" d="m4 4 16 16"/></svg>';
+  button.innerHTML=icon;
+  button.addEventListener('click',()=>{
+    const visible = field.type === 'password';
+    field.type = visible ? 'text' : 'password';
+    button.setAttribute('aria-pressed',String(visible));
+    button.setAttribute('aria-label',(visible ? 'Ocultar ' : 'Mostrar ')+label);
+  });
+}
+
+function mountRecovery(authPreview){
+  const route = location.hash;
+  const reset = route === '#redefinir-senha';
+  main.replaceChildren(document.querySelector('#stitch-auth').content.cloneNode(true));
+  main.querySelector('.auth-shell').classList.add('auth-recovery-shell');
+  main.querySelector('.auth-story').remove();
+  main.querySelector('.auth-tabs').remove();
+  main.querySelector('.auth-assurance').remove();
+  const content = main.querySelector('.auth-content');
+  content.replaceChildren(document.querySelector(reset ? '#stitch-reset' : '#stitch-recovery').content.cloneNode(true));
+  const panel = content.querySelector('.auth-recovery');
+  const active = () => panel.isConnected && location.hash === route;
+  panel.dataset.recoveryRoute=route;
+  const form = panel.querySelector('form');
+  const submit = form.querySelector('[type=submit]');
+  const error = panel.querySelector('.auth-recovery-error');
+  const status = panel.querySelector('[role=status]');
+  const resetEndpoint = '/api/auth/reset-password';
+  const accountLabel = panel.querySelector('[data-reset-account]');
+  let busy = false;
+  let attemptId;
+  function setBusy(value){
+    busy=value;
+    form.setAttribute('aria-busy',String(value));
+    submit.disabled=value;
+    submit.textContent=value ? (reset ? 'Salvando…' : 'Enviando…')
+      : (reset ? 'Salvar nova senha' : 'Enviar link de recuperação');
+  }
+  const retry = panel.querySelector('[data-reset-retry]');
+  function showInvalidGrant(focusLink){
+    attemptId=undefined;
+    form.reset();
+    form.hidden=true;
+    retry.hidden=true;
+    accountLabel.hidden=true;
+    accountLabel.textContent='';
+    panel.querySelector('#reset-password-help').hidden=true;
+    const request = panel.querySelector('[data-reset-request]');
+    request.hidden=false;
+    error.textContent=invalidRecovery;
+    if(focusLink) request.focus();
+  }
+  async function checkGrant(){
+    const wasRetryFocused = document.activeElement === retry;
+    retry.hidden=true;
+    status.textContent='Verificando o link de recuperação…';
+    error.textContent='';
+    try{
+      const grant = await apiRequest(resetEndpoint);
+      if(!active()) return;
+      if(grant?.ok !== true || typeof grant.attemptId !== 'string' || !grant.attemptId
+        || typeof grant.maskedEmail !== 'string' || !grant.maskedEmail) throw new Error('Invalid recovery response');
+      attemptId=grant.attemptId;
+      accountLabel.textContent='Conta: '+grant.maskedEmail;
+      accountLabel.hidden=false;
+      form.hidden=false;
+      if(wasRetryFocused) form.elements.password.focus();
+    }catch(failure){
+      if(!active()) return;
+      if(failure.status===401) showInvalidGrant(wasRetryFocused);
+      else{
+        error.textContent='Não foi possível verificar o link. Tente novamente.';
+        retry.hidden=false;
+        if(wasRetryFocused) retry.focus();
+      }
+    }finally{
+      if(active()) status.textContent='';
+    }
+  }
+  if(reset){
+    recoveryEmail='';
+    panel.querySelectorAll('.auth-recovery-eye').forEach(wireRecoveryPassword);
+    const {password,confirmation} = form.elements;
+    password.addEventListener('input',()=>{
+      password.setCustomValidity('');
+      confirmation.setCustomValidity('');
+    });
+    confirmation.addEventListener('input',()=>confirmation.setCustomValidity(''));
+    retry.addEventListener('click',checkGrant);
+  }else{
+    form.elements.email.value=recoveryEmail;
+    recoveryEmail='';
+  }
+  if(authPreview){
+    submit.disabled=true;
+    error.textContent='Recuperação de senha indisponível nesta prévia.';
+  }else if(reset){
+    checkGrant();
+  }
+  form.addEventListener('submit',async event=>{
+    event.preventDefault();
+    if(authPreview || busy || form.hidden) return;
+    const values = new FormData(form);
+    const password = values.get('password');
+    if(reset && ([...password].length < 8 || new TextEncoder().encode(password).length > 1024)){
+      form.elements.password.setCustomValidity('Use uma senha com pelo menos 8 caracteres e dentro do limite permitido.');
+      form.elements.password.reportValidity();
+      return;
+    }
+    if(reset && values.get('password') !== values.get('confirmation')){
+      form.elements.confirmation.setCustomValidity('As senhas precisam ser iguais.');
+      form.elements.confirmation.reportValidity();
+      return;
+    }
+    const epoch = accountEpoch;
+    error.textContent='';
+    status.textContent='';
+    setBusy(true);
+    try{
+      if(reset){
+        await apiRequest(resetEndpoint,{password,attemptId});
+        form.reset();
+        if(epoch !== accountEpoch) return;
+        const stillActive = active();
+        accountChannel?.postMessage('account-changed');
+        if(!stillActive){
+          if(accountUser) await restoreAccount();
+          return;
+        }
+        forgetAccount();
+        authNotice='';
+        sessionProblem=false;
+        logoutProblem=false;
+        recoverySucceeded=true;
+        history.replaceState(history.state,'','#login');
+        render(true);
+      }else{
+        await apiRequest('/api/auth/forgot-password',{email:values.get('email').trim()});
+        if(active()) status.textContent='Se este e-mail estiver cadastrado, enviamos um link para redefinir sua senha.';
+      }
+    }catch(failure){
+      if(!active()) return;
+      if(reset && failure.status===401) showInvalidGrant(true);
+      else if(failure.status===429) error.textContent='Muitas tentativas. Aguarde e tente novamente.';
+      else if(reset && failure.status===400) error.textContent='Confira a nova senha e tente novamente.';
+      else error.textContent=reset ? 'Não foi possível salvar a nova senha. Tente novamente.'
+        : 'Não foi possível solicitar o link. Tente novamente.';
+    }finally{
+      if(active()){
+        setBusy(false);
+        if(!form.hidden && document.activeElement===document.body) submit.focus();
+      }
+    }
+  });
+}
+
 function renderAccountGate(focus,authPreview){
   const register=location.hash==='#cadastro';
   const pending=appMode==='checking'||authBusy;
@@ -1585,7 +1750,21 @@ function renderAccountGate(focus,authPreview){
         if(!authBusy) location.assign('/api/auth/google');
       });
     }
-    main.querySelector('#auth-status').textContent=authNotice || googleNotice;
+    main.querySelector('#auth-status').textContent=authNotice || googleNotice
+      || (!register && recoveryLinkFailed && !recoverySucceeded ? invalidRecovery : '');
+    if(!register){
+      const link = main.querySelector('.auth-forgot');
+      link.addEventListener('click',()=>{
+        recoveryEmail=main.querySelector('#auth-email').value.trim();
+      });
+      if(recoverySucceeded){
+        const banner = document.createElement('p');
+        banner.className='auth-recovery-success';
+        banner.setAttribute('role','status');
+        banner.textContent='Senha redefinida com sucesso. Entre com sua nova senha.';
+        main.querySelector('.auth-intro').after(banner);
+      }
+    }
     if(authPreview) main.querySelector('.auth-assurance').textContent='Acesso à conta indisponível nesta prévia.';
     main.querySelector('.auth-submit').disabled=authPreview;
     main.querySelector('form').addEventListener('submit',event=>{
@@ -1706,8 +1885,10 @@ main.addEventListener('click',event=>{
 function render(focus){
   entryEditor?.cleanup?.();
   entryEditor = null;
-  const authPreview=appMode==='demo'&&(location.hash==='#login'||location.hash==='#cadastro');
-  updateAccountChrome(authPreview);
+  const recovering = recoveryRoute();
+  const authPreview=appMode==='demo'&&(location.hash==='#login'||location.hash==='#cadastro'||recovering);
+  const failedRecoveryLogin = recoveryLinkFailed && location.hash === '#login';
+  updateAccountChrome(authPreview || recovering || failedRecoveryLogin);
   const savedOrigin = entryRoute() && history.state?.finflowEntry?.route === location.hash ? history.state.finflowEntry : null;
   const editId = editIdFromRoute();
   const item = editId === null ? null : records().find(record=>record.id === editId);
@@ -1719,7 +1900,16 @@ function render(focus){
   document.body.classList.toggle('transactions-view',!!listRoute);
   document.body.classList.toggle('entry-view',Boolean(entryRoute() && ready && !showSheet));
   document.body.classList.toggle('settings-view',visibleRoute==='#configuracoes' && (appMode==='demo'||Boolean(accountUser)));
-  if(authPreview||(appMode!=='demo'&&!accountUser)){
+  if(recovering){
+    document.body.classList.remove('home-view');
+    if(appMode==='checking' || authBusy) renderAccountGate(focus,authPreview);
+    else if(main.querySelector('[data-recovery-route]')?.dataset.recoveryRoute !== location.hash){
+      mountRecovery(authPreview);
+      if(focus) main.querySelector('h1').focus();
+    }
+    return;
+  }
+  if(authPreview||failedRecoveryLogin||(appMode!=='demo'&&!accountUser)){
     document.body.classList.remove('home-view');
     renderAccountGate(focus,authPreview);
     return;
@@ -1826,6 +2016,8 @@ transactionsMobile.addEventListener('change',()=>{
   if(entryRoute() && !saveBusy) render(true);
 });
 window.addEventListener('hashchange',()=>{
+  recoveryLinkFailed=false;
+  if(location.hash !== '#login') recoverySucceeded=false;
   if(entryEditor && entryEditor.route !== location.hash && !pendingEntryReturn){
     if(saveBusy || entryEditor.hasChanges()){
       history.pushState(entryEditor.state,'',entryEditor.route);
@@ -1841,6 +2033,10 @@ window.addEventListener('hashchange',()=>{
     pendingSpending=false;
     showMobileSpending();
   }
+});
+window.addEventListener('pagehide',()=>{
+  recoveryEmail='';
+  main.querySelector('.auth-recovery form')?.reset();
 });
 document.querySelector('#account-logout').addEventListener('click',logout);
 accountTools.closest('details').addEventListener('keydown',event=>{

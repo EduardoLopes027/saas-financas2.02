@@ -10,6 +10,7 @@ const { rootCertificates } = require('node:tls');
 const test = require('node:test');
 const { createHandler } = require('./auth.cjs');
 const { googleClient, challenge } = require('./google-oauth.cjs');
+const { recoveryClient } = require('./recovery.cjs');
 
 const dependencyRoot = process.env.FINFLOW_PGLITE_DIR;
 const origin = 'https://finflow.example.test';
@@ -81,7 +82,7 @@ test('PostgreSQL descartável com papel restrito: autenticação, Google OAuth, 
     await db.close();
   });
   await db.exec('CREATE ROLE anon; CREATE ROLE authenticated; CREATE ROLE service_role;');
-  const schema = (await readFile(join(__dirname, '../supabase/schema.sql'), 'utf8')).replaceAll('\\r\\n', '\\n');
+  const schema = (await readFile(join(__dirname, '../supabase/schema.sql'), 'utf8')).replace(/\r\n/g, '\n');
   const avatarMigration = await readFile(join(__dirname, '../supabase/migrations/20261127000000_account_avatar.sql'), 'utf8');
   const migration = await readFile(join(__dirname, '../supabase/migrations/20261126000000_account_settings.sql'), 'utf8');
   const profileStart = schema.indexOf('ALTER TABLE finflow_private.users\n  ADD COLUMN IF NOT EXISTS phone');
@@ -91,6 +92,9 @@ test('PostgreSQL descartável com papel restrito: autenticação, Google OAuth, 
   await db.exec(migration);
   await db.exec(avatarMigration);
   await db.exec(avatarMigration);
+  const recoveryMigration = await readFile(join(__dirname, '../supabase/migrations/20261127010000_password_recovery.sql'), 'utf8');
+  await db.exec(recoveryMigration);
+  await db.exec(recoveryMigration);
   await db.exec(schema);
   const [permissions] = (await db.query(`
     SELECT has_schema_privilege('anon','finflow_private','USAGE') AS anon,
@@ -123,7 +127,28 @@ test('PostgreSQL descartável com papel restrito: autenticação, Google OAuth, 
     const profile = tokens.get(options.headers.Authorization.slice('Bearer '.length));
     return Response.json({ identities: [{ provider: 'google', identity_data: profile }] });
   });
-  const handler = createHandler(store, { secure: true, postgres: true, expectedOrigin: origin, google });
+  const mails = new Map();
+  let recoveryCode = 0;
+  const recovery = recoveryClient('https://supabase.example.test', 'publishable-test', origin, async (url, options) => {
+    const endpoint = new URL(url);
+    const input = JSON.parse(options.body);
+    assert.equal(options.headers.apikey, 'publishable-test');
+    if (endpoint.pathname === '/auth/v1/recover') {
+      assert.equal(input.code_challenge_method, 's256');
+      const callback = new URL(endpoint.searchParams.get('redirect_to'));
+      assert.equal(callback.origin, origin);
+      assert.equal(callback.pathname, '/api/auth/recovery/callback');
+      mails.set(input.email, { state: callback.searchParams.get('state'), challenge: input.code_challenge });
+      return Response.json({});
+    }
+    assert.equal(endpoint.pathname + endpoint.search, '/auth/v1/token?grant_type=pkce');
+    const flow = codes.get(input.auth_code);
+    if (!flow?.user || flow.challenge !== challenge(input.code_verifier)) return new Response(null, { status: 400 });
+    codes.delete(input.auth_code);
+    const claims = Buffer.from(JSON.stringify({ sub: flow.user.id, amr: [{ method: flow.method ?? 'recovery' }] })).toString('base64url');
+    return Response.json({ user: flow.user, access_token: 'header.' + claims + '.signature', refresh_token: 'not-for-browser' });
+  });
+  const handler = createHandler(store, { secure: true, postgres: true, expectedOrigin: origin, google, recovery });
   server = createServer(async (request, response) => {
     if (request.headers['x-test-vercel-helper']) {
       const chunks = [];
@@ -134,8 +159,8 @@ test('PostgreSQL descartável com papel restrito: autenticação, Google OAuth, 
   });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   const root = 'http://127.0.0.1:' + server.address().port;
-  const api = (path, { method = 'GET', cookie, body, browserOrigin = origin, parsed = false, code } = {}) =>
-    fetch(root + '/api/index?' + new URLSearchParams({ __route: path, ...(code && { code }) }), {
+  const api = (path, { method = 'GET', cookie, body, browserOrigin = origin, parsed = false, code, state } = {}) =>
+    fetch(root + '/api/index?' + new URLSearchParams({ __route: path, ...(code && { code }), ...(state && { state }) }), {
       method,
       headers: {
         ...(browserOrigin && { Origin: browserOrigin }),
@@ -339,6 +364,105 @@ test('PostgreSQL descartável com papel restrito: autenticação, Google OAuth, 
   assert.equal((await purge(true)).status, 401);
   assert.equal((await finish(...pendingLink)).headers.get('location'), failed);
   assert.equal((await session(other)).status, 200);
+
+  const forgot = (email, browserOrigin = origin) => api('auth/forgot-password', {
+    method: 'POST', body: { email, redirect_to: 'https://untrusted.example.test' }, browserOrigin,
+  });
+  const recoveryCallback = (state, code) => api('auth/recovery/callback', { state, code });
+  const resetRoute = (cookie, body, browserOrigin = origin) => api('auth/reset-password', {
+    cookie, body, browserOrigin, method: body ? 'POST' : 'GET',
+  });
+  const recover = async (email, identity) => {
+    const sent = await forgot(email);
+    assert.equal(sent.status, 202);
+    assert.deepEqual(await sent.json(), { ok: true });
+    const flow = mails.get(email);
+    assert.ok(flow);
+    const code = 'recovery-' + codes.size + '-' + ++recoveryCode;
+    codes.set(code, { challenge: flow.challenge, user: identity });
+    return { flow, code };
+  };
+  const startGrant = async (email, identity) => {
+    const { flow, code } = await recover(email, identity);
+    const response = await recoveryCallback(flow.state, code);
+    assert.equal(response.headers.get('location'), '/#redefinir-senha');
+    assert.equal(response.headers.get('referrer-policy'), 'no-referrer');
+    const raw = response.headers.getSetCookie()[0];
+    assert.match(raw, /^__Host-finflow_recovery=.+; Path=\/; HttpOnly; Secure; SameSite=Strict; Max-Age=300$/);
+    const cookie = raw.split(';')[0];
+    const status = await resetRoute(cookie);
+    assert.equal(status.status, 200);
+    const body = await status.json();
+    assert.equal(body.ok, true);
+    assert.equal(body.maskedEmail, email[0] + '***@example.test');
+    return { cookie, attemptId: body.attemptId, state: flow.state, code };
+  };
+
+  assert.equal((await forgot('primeira@example.test', null)).status, 403);
+  for (const email of ['missing@example.test', 'primeira@example.test']) {
+    const neutral = await forgot(email);
+    assert.equal(neutral.status, 202);
+    assert.deepEqual(await neutral.json(), { ok: true });
+    assert.equal(mails.has(email), false);
+  }
+  assert.equal((await resetRoute()).status, 401);
+  const native = { id: '3736b722-f5ab-4baf-bcc2-6fe062145a61', email: 'primeira@example.test',
+    email_confirmed_at: '2026-11-01T00:00:00Z' };
+  const googleRecovery = { id: '533cc4f0-03e9-4e7c-bfa0-939dfcbab1e6', email: profile.email,
+    email_confirmed_at: native.email_confirmed_at, identities: [{ provider: 'google', identity_data: profile }] };
+  const oldCredential = await store.getUser(native.email);
+  const nativeLogin = await api('auth/login', { method: 'POST',
+    body: { email: native.email, password: 'senha fict\u00edcia e longa' },
+  });
+  assert.equal(nativeLogin.status, 200);
+  const nativeSession = nativeLogin.headers.getSetCookie()[0].split(';')[0];
+  await sql.unsafe('RESET ROLE');
+  await sql.unsafe('INSERT INTO finflow_private.recovery_identities (user_id,provider_user_id,verified_email) VALUES ($1,$2,$3)',
+    [oldCredential.id, native.id, native.email]);
+  await sql.unsafe('SET ROLE finflow_runtime');
+  // Restore the exact verified Google mailbox after exercising the changed-email case above.
+  const googleSession = newSession(await finish(...await authorize(profile)));
+  assert.equal((await session(googleSession)).status, 200);
+  const wrong = await recover(native.email, { ...native, id: googleRecovery.id });
+  codes.get(wrong.code).method = 'oauth';
+  const rejected = await recoveryCallback(wrong.flow.state, wrong.code);
+  assert.equal(rejected.headers.get('location'), '/?auth_error=recovery_failed#login');
+  const target = await startGrant(native.email, native);
+  const exhausted = await forgot(native.email);
+  assert.equal(exhausted.status, 202);
+  assert.deepEqual(await exhausted.json(), { ok: true });
+  assert.equal(mails.get(native.email).state, target.state);
+  const swapped = await recover(profile.email, googleRecovery);
+  const swappedResponse = await recoveryCallback(swapped.flow.state, target.code);
+  assert.equal(swappedResponse.headers.get('location'), '/?auth_error=recovery_failed#login');
+  const otherTarget = await startGrant(profile.email, googleRecovery);
+  assert.equal((await resetRoute(otherTarget.cookie, { attemptId: target.attemptId, password: 'Nova1234' })).status, 401);
+  assert.equal((await resetRoute(otherTarget.cookie, { attemptId: otherTarget.attemptId, password: 'Nova123' })).status, 400);
+  assert.equal((await resetRoute(otherTarget.cookie, { attemptId: otherTarget.attemptId, password: 'Nova1234' }, null)).status, 403);
+  assert.equal((await recoveryCallback(target.state, target.code)).headers.get('location'), '/?auth_error=recovery_failed#login');
+
+  await sql.unsafe('UPDATE finflow_private.google_identities SET verified_email=$2 WHERE subject=$1',
+    [profile.sub, 'outro@example.test']);
+  assert.equal((await resetRoute(otherTarget.cookie, { attemptId: otherTarget.attemptId, password: 'Nova1234' })).status, 401);
+  await sql.unsafe('UPDATE finflow_private.google_identities SET verified_email=$2 WHERE subject=$1', [profile.sub, profile.email]);
+  const googleReset = await resetRoute(otherTarget.cookie, { attemptId: otherTarget.attemptId, password: 'Nova1234' });
+  assert.equal(googleReset.status, 200);
+  assert.equal((await session(googleSession)).status, 401);
+  assert.equal((await api('auth/login', { method: 'POST', body: { email: profile.email, password: 'Nova1234' } })).status, 200);
+  assert.equal((await session(nativeSession)).status, 200);
+  const parallel = await Promise.all([1, 2].map(() => resetRoute(target.cookie, {
+    attemptId: target.attemptId, password: 'Outra123',
+  })));
+  assert.deepEqual(parallel.map(response => response.status).sort(), [200, 401]);
+  const reset = parallel.find(response => response.status === 200);
+  assert.deepEqual(await reset.json(), { redirect: '/#login' });
+  assert.match(reset.headers.getSetCookie()[0], /Max-Age=0/);
+  assert.equal((await resetRoute(target.cookie)).status, 401);
+  assert.equal((await session(nativeSession)).status, 401);
+  assert.equal(await store.rotateSession('stale-credential', oldCredential.id, Date.now() + 5000,
+    null, Date.now(), oldCredential.password_salt), false);
+  assert.equal((await api('auth/login', { method: 'POST', body: { email: native.email, password: 'senha fict\u00edcia e longa' } })).status, 401);
+  assert.equal((await api('auth/login', { method: 'POST', body: { email: native.email, password: 'Outra123' } })).status, 200);
 
   for (const table of ['sessions', 'google_identities', 'accounts', 'categories', 'recurring_rules', 'transactions',
     'transaction_receipts']) {

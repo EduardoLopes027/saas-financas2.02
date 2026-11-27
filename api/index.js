@@ -2,6 +2,8 @@
 
 const { createHandler, json } = require('../backend/auth.cjs');
 const { googleClient } = require('../backend/google-oauth.cjs');
+const { recoveryClient } = require('../backend/recovery.cjs');
+const { waitUntil } = require('@vercel/functions');
 
 const reasons = new Map(Object.entries({
   APP_ORIGIN_MISSING: 'APP_ORIGIN is missing',
@@ -83,7 +85,18 @@ async function initialize() {
     } catch {
       console.error('[finflow/api] Invalid Supabase Auth configuration');
     }
-    return createHandler(store, { secure: true, postgres: true, expectedOrigin: origin, google });
+    let recovery;
+    if (process.env.PASSWORD_RECOVERY_ENABLED === 'true') {
+      try {
+        recovery = recoveryClient(process.env.SUPABASE_URL,
+          process.env.SUPABASE_PUBLISHABLE_KEY || process.env.SUPABASE_ANON_KEY, origin);
+        if (!recovery) throw new Error();
+      } catch {
+        console.error('[finflow/api] Invalid Supabase password recovery configuration');
+      }
+    }
+    return createHandler(store, { secure: true, postgres: true, expectedOrigin: origin, google, recovery,
+      deferRecovery: waitUntil });
   } catch (error) {
     reportInitializationError(stage, error);
     await store?.close().catch(() => {});

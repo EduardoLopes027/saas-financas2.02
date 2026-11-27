@@ -1,6 +1,6 @@
 'use strict';
 
-const { createHash, randomBytes, scrypt, timingSafeEqual } = require('node:crypto');
+const { createHash, randomBytes, randomUUID, scrypt, timingSafeEqual } = require('node:crypto');
 const { readFile, mkdir } = require('node:fs/promises');
 const { createServer } = require('node:http');
 const { dirname, join } = require('node:path');
@@ -8,6 +8,10 @@ const { promisify } = require('node:util');
 const { transactionFields, transactionStore, MAX_TRANSACTION_BODY } = require('./transactions.cjs');
 const { callbackPath, challenge, failure, flowCookie, newFlow, readFlow, redirect } = require('./google-oauth.cjs');
 
+const {
+  attemptSeconds, grantSeconds, randomTokenPattern, readRecoveryCookie,
+  recoveryCallback, recoveryCookie, recoveryFailed, recoveryForm, resetPath,
+} = require('./recovery.cjs');
 const { AvatarBusyError, MAX_PROFILE_BODY } = require('./avatar.cjs');
 const { profileUpdates, userProfile } = require('./account-settings.cjs');
 
@@ -239,7 +243,7 @@ async function sqliteStore(databasePath) {
   };
 }
 
-function createHandler(store, { secure = false, postgres = false, expectedOrigin, google } = {}) {
+function createHandler(store, { secure = false, postgres = false, expectedOrigin, google, recovery, deferRecovery } = {}) {
   const { transactions } = store;
   const maxAmount = postgres ? POSTGRES_MAX_AMOUNT : Number.MAX_SAFE_INTEGER;
   const maxBody = secure ? HOSTED_MAX_BODY : MAX_TRANSACTION_BODY;
@@ -303,11 +307,101 @@ function createHandler(store, { secure = false, postgres = false, expectedOrigin
     const token = randomBytes(32).toString('base64url');
     const duration = remember === true ? 30 * 24 * 60 * 60 : SESSION_SECONDS;
     const hashToken = tokenHash(token);
-    await store.rotateSession(hashToken, user.id, now + duration * 1000, sessionHash(request), now);
+    const rotated = await store.rotateSession(hashToken, user.id, now + duration * 1000, sessionHash(request), now, salt);
+    if (rotated === false) throw new HttpError(401, 'invalid_credentials');
     const profile = await store.getSession(hashToken, Date.now());
     if (!profile) throw new HttpError(401, 'unauthenticated');
     response.setHeader('Set-Cookie', cookieHeaders(token, remember === false ? null : duration, secure));
     return json(response, 200, { user: userProfile(profile, Boolean(secure && google)) });
+  }
+
+  async function recoveryLimit(request, operation, scopes = []) {
+    const now = Date.now();
+    const ip = request.headers['x-vercel-forwarded-for'];
+    return store.recordAttempt(Math.floor(now / WINDOW_MS), [
+      ['recovery-' + operation + '-global', 120],
+      ['recovery-' + operation + '-network:' + tokenHash(typeof ip === 'string' ? ip : 'unknown'), 25],
+      ...scopes,
+    ]);
+  }
+
+  async function forgotPassword(request, response) {
+    const body = await readJson(request);
+    const email = typeof body?.email === 'string' ? body.email.trim().toLowerCase() : '';
+    const accepted = () => json(response, 202, { ok: true });
+    if (!secure || !recovery || email.length > 254 || !/^[^\s@\x00-\x1f]+@[^\s@\x00-\x1f]+\.[^\s@\x00-\x1f]+$/.test(email)) {
+      return accepted();
+    }
+    try {
+      const allowed = await recoveryLimit(request, 'forgot', [['recovery-email:' + tokenHash(email), 3]]);
+      if (allowed) {
+        const processing = (async () => {
+          const state = randomBytes(32).toString('base64url');
+          const verifier = randomBytes(32).toString('base64url');
+          const now = Date.now();
+          if (await store.startRecovery(email, tokenHash(state), verifier, now, now + attemptSeconds * 1000)) {
+            await recovery.send(email, state, verifier);
+          }
+        })().catch(() => console.error('[finflow] Falha ao solicitar recupera??o ao provedor'));
+        if (deferRecovery) deferRecovery(processing);
+        else await processing;
+      }
+    } catch {
+      console.error('[finflow] Falha ao iniciar recupera??o');
+    }
+    return accepted();
+  }
+
+  async function completeRecovery(request, response, params) {
+    try {
+      const [state, ...extraStates] = params.getAll('state');
+      const [code, ...extraCodes] = params.getAll('code');
+      if (!secure || !recovery || !randomTokenPattern.test(state ?? '') || extraStates.length
+          || !/^[A-Za-z0-9_-]{1,512}$/.test(code ?? '') || extraCodes.length || params.has('error')
+          || !await recoveryLimit(request, 'callback')) return redirect(response, recoveryFailed);
+      const attempt = await store.consumeRecovery(tokenHash(state), Date.now());
+      if (!attempt) return redirect(response, recoveryFailed);
+      const identity = await recovery.verify(code, attempt.verifier);
+      if (!identity) return redirect(response, recoveryFailed);
+      const grant = randomBytes(32).toString('base64url');
+      const issued = await store.issueRecoveryGrant(attempt, identity, tokenHash(grant), randomUUID(),
+        Date.now() + grantSeconds * 1000);
+      return issued ? redirect(response, recoveryForm, [recoveryCookie(grant)]) : redirect(response, recoveryFailed);
+    } catch {
+      console.error('[finflow] Falha ao verificar recupera??o');
+      return redirect(response, recoveryFailed);
+    }
+  }
+
+  async function resetPassword(request, response) {
+    const token = readRecoveryCookie(request);
+    if (!secure || !recovery || !token) throw new HttpError(401, 'invalid_recovery');
+    const grant = tokenHash(token);
+    const active = await store.getRecoveryGrant(grant, Date.now());
+    if (!active) throw new HttpError(401, 'invalid_recovery');
+    if (request.method === 'GET') {
+      const [name, domain] = active.email.split('@');
+      return json(response, 200, { ok: true, attemptId: active.public_id, maskedEmail: name[0] + '***@' + domain });
+    }
+    const { password, attemptId } = (await readJson(request)) ?? {};
+    if (attemptId !== active.public_id) throw new HttpError(401, 'invalid_recovery');
+    if (typeof password !== 'string' || [...password].length < 8 || Buffer.byteLength(password) > 1024) {
+      throw new HttpError(400, 'invalid_password');
+    }
+    if (activeHashes >= 4 || !await recoveryLimit(request, 'reset', [['recovery-grant:' + grant, 8]]) || activeHashes >= 4) {
+      throw new HttpError(429, 'too_many_attempts');
+    }
+    const salt = randomBytes(16);
+    let hash;
+    activeHashes++;
+    try {
+      hash = await hashPassword(password, salt);
+    } finally {
+      activeHashes--;
+    }
+    if (!await store.resetPassword(grant, attemptId, Date.now(), salt, hash)) throw new HttpError(401, 'invalid_recovery');
+    response.setHeader('Set-Cookie', recoveryCookie('', 0));
+    return json(response, 200, { redirect: '/#login' });
   }
 
   async function startGoogle(request, response, link) {
@@ -424,6 +518,13 @@ function createHandler(store, { secure = false, postgres = false, expectedOrigin
       }
 
       switch (route) {
+        case 'POST /api/auth/forgot-password':
+          return await forgotPassword(request, response);
+        case 'GET ' + recoveryCallback:
+          return await completeRecovery(request, response, params);
+        case 'GET ' + resetPath:
+        case 'POST ' + resetPath:
+          return await resetPassword(request, response);
         case 'GET /api/auth/google':
           try {
             return await startGoogle(request, response, false);

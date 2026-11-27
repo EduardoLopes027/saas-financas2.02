@@ -11,6 +11,7 @@
     }
   ],
   "rewrites": [
+    { "source": "/api/auth/recovery/callback", "destination": "/api/index?__route=auth/recovery/callback" },
     { "source": "/api/auth/google/callback", "destination": "/api/index?__route=auth/google/callback" },
     { "source": "/api/auth/google/link", "destination": "/api/index?__route=auth/google/link" },
     { "source": "/api/auth/:action", "destination": "/api/index?__route=auth/:action" },

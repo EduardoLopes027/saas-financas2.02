@@ -112,6 +112,44 @@ body.account-gated { background: #f8f9ff; }
 .auth-content #auth-status { color: #a60031; }
 .auth-content #auth-status:empty { display: none; }
 .auth-assurance { justify-content: center; border-top: 1px solid #c7c4d755; padding-top: 14px; }
+.auth-forgot,.auth-recovery-back {
+  color: #2a14b4;
+  font-weight: 650;
+  text-underline-offset: 3px;
+}
+.auth-forgot { font-size: 13px; }
+.auth-shell.auth-recovery-shell { grid-template-columns: minmax(0,1fr); width: min(100%,520px); background: white; }
+.auth-recovery-shell .auth-panel { padding: clamp(20px,5vw,40px); }
+.auth-recovery [hidden] { display: none !important; }
+.auth-recovery .auth-input input { min-height: 44px; min-width: 0; padding-inline: 16px; }
+.auth-recovery .auth-input input[autocomplete="new-password"] { padding-inline-end: 52px; }
+.auth-recovery .auth-submit { min-height: 44px; }
+.auth-recovery-eye {
+  position: absolute;
+  right: 3px;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  color: #58546e;
+  background: transparent;
+}
+.auth-recovery-eye[aria-pressed="false"] .auth-eye-slash { display: none; }
+.auth-recovery-back { display: flex; align-items: center; justify-content: center; min-height: 44px; margin-top: 8px; }
+.auth-content .auth-recovery-success {
+  margin-block: 12px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: #e2f8ec;
+  color: #07543c;
+}
+.auth-content .auth-recovery-error { margin-block: 12px; color: #a60031; }
+.auth-content .auth-recovery-status { margin-block: 12px; }
+.auth-content .auth-recovery-account { margin-block: 8px 14px; color: #464554; overflow-wrap: anywhere; }
+.auth-content :is(.auth-recovery-success,.auth-recovery-error,.auth-recovery-status):empty { margin: 0; padding: 0; }
 @media(max-width:1023px) {
   .auth-story { display: none; }
   .auth-shell { grid-template-columns: 1fr; max-width: 610px; }

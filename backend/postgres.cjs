@@ -138,6 +138,15 @@ function createStore(sql) {
     u.theme, u.carry_over, u.amount_mask, u.currency, u.created_at, u.updated_at, u.avatar_url, u.avatar_google_suppressed,
     g.created_at AS google_linked_at, g.verified_email AS google_email, g.avatar_url AS google_avatar_url`;
   const googleJoin = `LEFT JOIN ${schema}.google_identities g ON g.user_id = u.id`;
+  const activeRecoveryGrant = `FROM ${schema}.recovery_grants g
+    JOIN ${schema}.users u ON u.id=g.user_id AND u.email=g.email AND u.password_salt=g.credential_salt
+    WHERE g.token_hash=$1 AND g.expires_at>$2 AND (CASE WHEN g.provider_user_id IS NOT NULL THEN EXISTS (
+      SELECT 1 FROM ${schema}.recovery_identities r
+      WHERE r.user_id=u.id AND r.provider_user_id=g.provider_user_id AND r.verified_email=u.email
+    ) ELSE EXISTS (
+      SELECT 1 FROM ${schema}.google_identities i
+      WHERE i.user_id=u.id AND i.subject=g.google_subject AND i.verified_email=u.email
+    ) END)`;
   return {
     async check() {
       await sql.unsafe(`SELECT ${profileColumns} FROM ${schema}.users u
@@ -229,11 +238,73 @@ function createStore(sql) {
         return undefined;
       });
     },
-    async rotateSession(hash, userId, expires, previous, now) {
-      await sql.begin(async query => {
+    async startRecovery(email, stateHash, verifier, now, expires) {
+      return sql.begin(async query => {
+        await query.unsafe(`DELETE FROM ${schema}.recovery_attempts WHERE expires_at <= $1`, [now]);
+        await query.unsafe(`DELETE FROM ${schema}.recovery_grants WHERE expires_at <= $1`, [now]);
+        const [attempt] = await query.unsafe(`INSERT INTO ${schema}.recovery_attempts
+          (state_hash,verifier,user_id,email,provider_user_id,google_subject,credential_salt,expires_at)
+          SELECT $2,$3,u.id,u.email,r.provider_user_id,g.subject,u.password_salt,$4
+          FROM ${schema}.users u
+          LEFT JOIN ${schema}.recovery_identities r ON r.user_id=u.id AND r.verified_email=u.email
+          LEFT JOIN ${schema}.google_identities g ON g.user_id=u.id AND g.verified_email=u.email
+          WHERE u.email=$1 AND (r.user_id IS NOT NULL OR g.user_id IS NOT NULL)
+          RETURNING state_hash`, [email, stateHash, verifier, expires]);
+        return Boolean(attempt);
+      });
+    },
+    async consumeRecovery(stateHash, now) {
+      const [attempt] = await sql.unsafe(`DELETE FROM ${schema}.recovery_attempts
+        WHERE state_hash=$1 AND expires_at>$2 RETURNING *`, [stateHash, now]);
+      return attempt;
+    },
+    async issueRecoveryGrant(attempt, identity, tokenHash, publicId, expires) {
+      if (identity.email !== attempt.email
+          || (attempt.provider_user_id ? identity.id !== attempt.provider_user_id
+            : identity.subject !== attempt.google_subject)) return false;
+      const rows = await sql.unsafe(`INSERT INTO ${schema}.recovery_grants
+        (token_hash,public_id,user_id,email,provider_user_id,google_subject,credential_salt,expires_at)
+        SELECT $1,$8,u.id,u.email,$6,$7,u.password_salt,$2 FROM ${schema}.users u
+        WHERE u.id=$3 AND u.email=$4 AND u.password_salt=$5
+          AND (CASE WHEN $6::uuid IS NOT NULL THEN EXISTS (
+            SELECT 1 FROM ${schema}.recovery_identities r
+            WHERE r.user_id=u.id AND r.provider_user_id=$6 AND r.verified_email=u.email
+          ) ELSE EXISTS (
+            SELECT 1 FROM ${schema}.google_identities g
+            WHERE g.user_id=u.id AND g.subject=$7 AND g.verified_email=u.email
+          ) END)
+        RETURNING token_hash`, [tokenHash, expires, attempt.user_id, attempt.email,
+        attempt.credential_salt, attempt.provider_user_id, attempt.google_subject, publicId]);
+      return rows.length > 0;
+    },
+    async getRecoveryGrant(hash, now) {
+      const [grant] = await sql.unsafe(`SELECT g.public_id,g.email ${activeRecoveryGrant}`, [hash, now]);
+      return grant;
+    },
+    async resetPassword(grant, publicId, now, salt, passwordHash) {
+      return sql.begin(async query => {
+        const [owner] = await query.unsafe(`SELECT u.id ${activeRecoveryGrant}
+          AND g.public_id=$3 FOR UPDATE OF u`, [grant, now, publicId]);
+        if (!owner) return false;
+        const consumed = await query.unsafe(`DELETE FROM ${schema}.recovery_grants WHERE token_hash=$1 RETURNING token_hash`, [grant]);
+        if (!consumed.length) return false;
+        await query.unsafe(`UPDATE ${schema}.users SET password_salt=$2, password_hash=$3,
+          password_enabled=true, updated_at=clock_timestamp() WHERE id=$1`, [owner.id, salt, passwordHash]);
+        await query.unsafe(`DELETE FROM ${schema}.sessions WHERE user_id=$1`, [owner.id]);
+        await query.unsafe(`DELETE FROM ${schema}.recovery_attempts WHERE user_id=$1`, [owner.id]);
+        await query.unsafe(`DELETE FROM ${schema}.recovery_grants WHERE user_id=$1`, [owner.id]);
+        return true;
+      });
+    },
+    async rotateSession(hash, userId, expires, previous, now, credentialSalt) {
+      return sql.begin(async query => {
+        const [user] = await query.unsafe(`SELECT id FROM ${schema}.users
+          WHERE id=$1 AND password_enabled AND password_salt=$2 FOR UPDATE`, [userId, credentialSalt]);
+        if (!user) return false;
         await query.unsafe(`DELETE FROM ${schema}.sessions WHERE expires_at <= $1 OR token_hash = $2`, [now, previous]);
         await query.unsafe(`INSERT INTO ${schema}.sessions (token_hash,user_id,expires_at) VALUES ($1,$2,$3)`,
           [hash, userId, expires]);
+        return true;
       });
     },
     async recordAttempt(bucket, scopes) {

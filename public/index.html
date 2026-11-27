@@ -284,7 +284,7 @@
             <form>
               <div data-register><label for="auth-name">Nome completo</label><div class="auth-input"><i class="material-symbols-outlined" aria-hidden="true">person</i><input id="auth-name" name="name" autocomplete="name" placeholder="Seu nome completo" maxlength="120" pattern=".*\S.*" title="Informe seu nome." required></div></div>
               <div><label for="auth-email">E-mail pessoal ou corporativo</label><div class="auth-input"><i class="material-symbols-outlined" aria-hidden="true">mail</i><input id="auth-email" name="email" type="email" autocomplete="username" placeholder="seu@email.com" required></div></div>
-              <div><div class="auth-label-row"><label for="auth-password">Senha de acesso</label><small data-login title="Recuperação de senha indisponível">Esqueci minha senha · indisponível</small></div>
+              <div><div class="auth-label-row"><label for="auth-password">Senha de acesso</label><a data-login class="auth-forgot" href="#recuperar-senha">Esqueci minha senha</a></div>
                 <div class="auth-input"><i class="material-symbols-outlined" aria-hidden="true">lock</i><input id="auth-password" name="password" type="password" required><button id="auth-eye" type="button" aria-label="Mostrar senha" aria-pressed="false"><i class="material-symbols-outlined" aria-hidden="true">visibility</i></button></div>
                 <div data-register class="auth-strength"><meter min="0" max="15" value="0" aria-label="Comprimento da senha"></meter><small id="auth-password-help">Mínimo de 15 caracteres</small></div>
               </div>
@@ -300,6 +300,51 @@
       </div>
     </div>
     <div class="auth-footer"><span><i class="material-symbols-outlined" aria-hidden="true">account_balance_wallet</i> Finanças pessoais</span><span>FinFlow</span></div>
+  </div>
+</template>
+<template id="stitch-recovery">
+  <div class="auth-recovery">
+    <h1 tabindex="-1">Recuperar senha</h1>
+    <p class="auth-intro">Informe o e-mail da sua conta para receber um link de recuperação.</p>
+    <form>
+      <div>
+        <label for="recovery-email">E-mail</label>
+        <div class="auth-input"><input id="recovery-email" name="email" type="email" autocomplete="email" placeholder="seu@email.com" maxlength="254" required></div>
+      </div>
+      <button class="auth-submit" type="submit">Enviar link de recuperação</button>
+    </form>
+    <p class="auth-recovery-success" role="status"></p>
+    <p class="auth-recovery-error" role="alert"></p>
+    <a class="auth-recovery-back" href="#login">Voltar para o login</a>
+  </div>
+</template>
+<template id="stitch-reset">
+  <div class="auth-recovery">
+    <h1 tabindex="-1">Definir nova senha</h1>
+    <p class="auth-intro" id="reset-password-help">Use pelo menos 8 caracteres.</p>
+    <p class="auth-recovery-account" data-reset-account hidden></p>
+    <form hidden>
+      <div>
+        <label for="reset-password">Nova senha</label>
+        <div class="auth-input">
+          <input id="reset-password" name="password" type="password" autocomplete="new-password" aria-describedby="reset-password-help" minlength="8" maxlength="1024" required>
+          <button class="auth-recovery-eye" type="button" aria-controls="reset-password" aria-label="Mostrar nova senha" aria-pressed="false"></button>
+        </div>
+      </div>
+      <div>
+        <label for="reset-confirm">Confirme a nova senha</label>
+        <div class="auth-input">
+          <input id="reset-confirm" name="confirmation" type="password" autocomplete="new-password" minlength="8" maxlength="1024" required>
+          <button class="auth-recovery-eye" type="button" aria-controls="reset-confirm" aria-label="Mostrar confirmação da senha" aria-pressed="false"></button>
+        </div>
+      </div>
+      <button class="auth-submit" type="submit">Salvar nova senha</button>
+    </form>
+    <p class="auth-recovery-status" role="status"></p>
+    <p class="auth-recovery-error" role="alert"></p>
+    <button class="auth-submit" type="button" data-reset-retry hidden>Tentar novamente</button>
+    <a class="auth-recovery-back" href="#recuperar-senha" data-reset-request hidden>Solicitar novo link</a>
+    <a class="auth-recovery-back" href="#login">Voltar para o login</a>
   </div>
 </template>
 <template id="stitch-home">
