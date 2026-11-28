@@ -5,34 +5,36 @@
   font-display: swap;
 }
 
-/* Stitch palette. Use brighter rose text on dense surfaces and keep the
-   indigo button gradient dark enough for its white label. */
-html.dark {
+/* Stitch dark tokens. Use the muted swatch for decorative details.
+   Interactive placeholders and rose text on raised surfaces use contrast-safe tints. */
+:root:is(.dark, [data-theme="dark"]) {
   color-scheme: dark;
   --theme-canvas: #0f172a;
   --theme-card: #161e31;
   --theme-field: #1e293b;
   --theme-hover: #263248;
-  --theme-line: rgb(51 65 85 / 70%);
-  --theme-control-line: #64748b;
+  --theme-line: rgb(148 163 184 / 16%);
   --theme-ink: #f8fafc;
-  --theme-muted: #94a3b8;
+  --theme-secondary: #94a3b8;
+  --theme-muted: #64748b;
+  --theme-placeholder: color-mix(in srgb, var(--theme-muted) 12%, var(--theme-secondary));
   --theme-indigo: #818cf8;
   --theme-indigo-soft: #282e55;
   --theme-emerald: #34d399;
   --theme-emerald-soft: #103a36;
   --theme-rose: #f43f5e;
-  --theme-rose-ink: #fda4af;
+  --theme-rose-ink: #fb7185;
   --theme-rose-soft: #3a2335;
+  --theme-danger-fill: rgb(244 63 94 / 10%);
+  --theme-danger-border: rgb(244 63 94 / 30%);
   --theme-amber: #fcd34d;
   --theme-amber-soft: #3e321f;
-  --theme-action: linear-gradient(120deg, #5558dc, #4338ca);
-  --theme-action-hover: linear-gradient(120deg, #5154d4, #3d32ba);
+  --theme-indigo-hover: #a5b4fc;
   --theme-shadow: 0 12px 32px rgb(2 6 23 / 28%);
   --theme-scrim: rgb(2 6 23 / 72%);
   --theme-heading: Manrope, "Hanken Grotesk", system-ui, sans-serif;
   --green: var(--theme-indigo);
-  --muted: var(--theme-muted);
+  --muted: var(--theme-secondary);
   --border: var(--theme-line);
   --error: var(--theme-rose-ink);
   --focus-ring: 2px solid var(--theme-indigo);
@@ -41,10 +43,10 @@ html.dark {
   font-family: "Hanken Grotesk", system-ui, sans-serif;
 }
 
-html.dark body {
+:root:is(.dark, [data-theme="dark"]) body {
   --home-page: var(--theme-canvas);
   --home-ink: var(--theme-ink);
-  --home-muted: var(--theme-muted);
+  --home-muted: var(--theme-secondary);
   --home-blue: var(--theme-indigo);
   --home-soft: var(--theme-field);
   --settings-dock: var(--theme-card);
@@ -53,43 +55,43 @@ html.dark body {
 }
 
 /* Shell, navigation and shared controls */
-.dark :is(h1, h2, h3, .brand, .font-display-hero, .font-headline-lg, .font-headline-md,
-.transactions-stat-value, .entry-amount-line input, .entry-preview-amount, .auth-amount) {
+:is(.dark, [data-theme="dark"]) :is(h1, h2, h3, .brand, .font-display-hero, .font-headline-lg, .font-headline-md,
+.transactions-stat-value, .entry-amount-line input, .entry-preview-amount, .auth-brand, .auth-amount) {
   font-family: var(--theme-heading);
 }
-.dark :is(.font-body-md, .font-body-sm, .font-label-caps, .auth-tabs a) {
+:is(.dark, [data-theme="dark"]) :is(.font-body-md, .font-body-sm, .font-label-caps, .auth-tabs a, .auth-content label, .auth-example-head) {
   font-family: "Hanken Grotesk", system-ui, sans-serif;
 }
-.dark body > header,
-.dark :is(.mobile-dock, .home-view .mobile-dock, .transactions-view .mobile-dock, .settings-view .mobile-dock) {
+:is(.dark, [data-theme="dark"]) body > header,
+:is(.dark, [data-theme="dark"]) :is(.mobile-dock, .home-view .mobile-dock, .transactions-view .mobile-dock, .settings-view .mobile-dock) {
   background: var(--theme-card);
   border: 1px solid var(--theme-line);
   box-shadow: var(--theme-shadow);
 }
-.dark :is(.topbar, .transactions-view .topbar, .entry-view .topbar) {
+:is(.dark, [data-theme="dark"]) :is(.topbar, .transactions-view .topbar, .entry-view .topbar) {
   background: var(--theme-canvas);
   border-bottom: 1px solid var(--theme-line);
   box-shadow: none;
 }
-.dark :is(.sidebar-quick, .sidebar-profile, .top-search, .top-tools .toolbar-icon, .top-tools .toolbar-settings .test, .home-period) {
+:is(.dark, [data-theme="dark"]) :is(.sidebar-quick, .sidebar-profile, .top-search, .top-tools .toolbar-icon, .top-tools .toolbar-settings .test, .home-period) {
   background: var(--theme-field);
   border: 1px solid var(--theme-line);
   color: var(--theme-ink);
 }
-.dark :is(.quick-items span, .top-tools .test select, .mobile-quick-strip > :is(a, button) > span) {
+:is(.dark, [data-theme="dark"]) :is(.quick-items span, .top-tools .test select, .mobile-quick-strip > :is(a, button) > span) {
   background: var(--theme-hover);
-  color: var(--theme-muted);
+  color: var(--theme-secondary);
   border-color: var(--theme-line);
 }
-.dark :is(nav .nav, .home-view nav .nav, .mobile-dock :is(a, button),
+:is(.dark, [data-theme="dark"]) :is(nav .nav, .home-view nav .nav, .mobile-dock :is(a, button),
 .transactions-view .mobile-dock :is(a, button), .mobile-quick-strip > :is(a, button)) {
-  color: var(--theme-muted);
+  color: var(--theme-secondary);
 }
-.dark :is(nav .nav:not([aria-disabled=true]):hover, .mobile-dock :is(a, button):hover, .top-tools .toolbar-icon:hover) {
+:is(.dark, [data-theme="dark"]) :is(nav .nav:not([aria-disabled=true]):hover, .mobile-dock :is(a, button):hover, .top-tools .toolbar-icon:hover) {
   background: var(--theme-hover);
   color: var(--theme-ink);
 }
-.dark :is(.primary, .home-view .primary, .stitch-dashboard .stitch-add, .account-top-link,
+:is(.dark, [data-theme="dark"]) :is(.primary, .home-view .primary, .stitch-dashboard .stitch-add, .account-top-link,
   nav .nav[aria-current=page], .home-view nav .nav[aria-current=page],
   .mobile-dock a[aria-current=page], .transactions-view .mobile-dock a[aria-current=page],
   .settings-view .mobile-dock [data-mobile-menu], .mobile-brand > span,
@@ -98,297 +100,331 @@ html.dark body {
   .transactions-add, .transactions-types button[aria-pressed=true],
   .transactions-pagination button[aria-current=page], .settings-theme input:checked + span,
   .settings-pills button[aria-current], .settings-content .settings-primary, .entry-actions .entry-primary) {
-  background: var(--theme-action);
-  border-color: #6366f1;
-  color: #fff;
-  box-shadow: 0 4px 16px rgb(99 102 241 / 24%);
+  background: var(--theme-indigo);
+  border-color: var(--theme-line);
+  color: var(--theme-canvas);
+  box-shadow: 0 4px 16px color-mix(in srgb, var(--theme-indigo) 24%, transparent);
 }
-.dark :is(.primary, .home-view .primary, .stitch-dashboard .stitch-add, .transactions-add, .auth-content button.auth-submit,
+:is(.dark, [data-theme="dark"]) :is(.primary, .home-view .primary, .stitch-dashboard .stitch-add, .transactions-add, .auth-content button.auth-submit,
   nav .nav[aria-current=page], .home-view nav .nav[aria-current=page],
   .transactions-page .transactions-pagination button[aria-current=page], .entry-actions .entry-primary):hover {
-  background: var(--theme-action-hover);
-  color: #fff;
+  background: var(--theme-indigo-hover);
+  color: var(--theme-canvas);
 }
-.dark :is(input, select, textarea, button) { accent-color: var(--theme-indigo); }
-.dark :is(input, textarea)::placeholder { color: var(--theme-muted); opacity: 1; }
-.dark :is(.top-search input, .stitch-period select) { color: var(--theme-ink); }
-.dark :is(.skip, .demo-scenario) { background: var(--theme-field); color: var(--theme-ink); }
-.dark :is(.avatar, .settings-avatar) { background: var(--theme-indigo-soft); color: var(--theme-ink); }
-.dark :is(.state-card, .card.form, .card.transactions-card) {
+:is(.dark, [data-theme="dark"]) :is(input, select, textarea, button) { accent-color: var(--theme-indigo); }
+:is(.dark, [data-theme="dark"]) :is(input, textarea)::placeholder { color: var(--theme-placeholder); opacity: 1; }
+:is(.dark, [data-theme="dark"]) :is(.auth-remember, .settings-confirm) input { background-color: var(--theme-field); }
+:is(.dark, [data-theme="dark"]) :is(.top-search, .transactions-search-row, .transactions-search, .auth-tabs, .settings-theme,
+.stitch-period, .transactions-extra-filters .transactions-select) { border: 1px solid var(--theme-line); }
+:is(.dark, [data-theme="dark"]) :is(.top-search, .stitch-period, .transactions-search-row) { box-shadow: none; }
+:is(.dark, [data-theme="dark"]) option { color: var(--theme-ink); background: var(--theme-field); }
+:is(.dark, [data-theme="dark"]) :is(.transactions-delete-dialog-actions button, .transactions-summary):focus-visible {
+  outline: var(--focus-ring);
+}
+:is(.dark, [data-theme="dark"]) :is(.top-search input, .stitch-period select) { color: var(--theme-ink); }
+:is(.dark, [data-theme="dark"]) :is(.skip, .demo-scenario) { background: var(--theme-field); color: var(--theme-ink); }
+:is(.dark, [data-theme="dark"]) :is(.avatar, .settings-avatar) { background: var(--theme-indigo-soft); color: var(--theme-ink); }
+:is(.dark, [data-theme="dark"]) :is(.state-card, .card.form, .card.transactions-card) {
   background: var(--theme-card);
   border-color: var(--theme-line);
   box-shadow: var(--theme-shadow);
 }
-.dark .notice { background: var(--theme-indigo-soft); }
-.dark .notice.error { background: var(--theme-rose-soft); }
-.dark dialog::backdrop { background: var(--theme-scrim); }
+:is(.dark, [data-theme="dark"]) .notice { background: var(--theme-indigo-soft); }
+:is(.dark, [data-theme="dark"]) .notice.error { background: var(--theme-rose-soft); }
+:is(.dark, [data-theme="dark"]) dialog::backdrop { background: var(--theme-scrim); }
 
 /* Home */
-.dark .stitch-dashboard {
+:is(.dark, [data-theme="dark"]) .stitch-dashboard {
   --rank-1: var(--theme-indigo);
   --rank-2: var(--theme-emerald);
   --rank-3: var(--theme-muted);
 }
-.dark .stitch-dashboard :is(.stitch-card, .bg-surface-container-lowest) {
+:is(.dark, [data-theme="dark"]) .stitch-dashboard :is(.stitch-card, .bg-surface-container-lowest) {
   background: var(--theme-card);
   border: 1px solid var(--theme-line);
   box-shadow: var(--theme-shadow);
 }
-.dark .stitch-dashboard .stitch-balance {
-  background: radial-gradient(ellipse at 95% 5%, rgb(99 102 241 / 14%), transparent 68%), var(--theme-card);
+:is(.dark, [data-theme="dark"]) .stitch-dashboard .stitch-balance {
+  background: radial-gradient(ellipse at 95% 5%, color-mix(in srgb, var(--theme-indigo) 14%, transparent), transparent 68%), var(--theme-card);
 }
-.dark .stitch-dashboard .stitch-expense {
+:is(.dark, [data-theme="dark"]) .stitch-dashboard .stitch-expense {
   background: radial-gradient(ellipse at 96% 5%, rgb(52 211 153 / 9%), transparent 65%), var(--theme-card);
 }
-.dark .stitch-dashboard :is(.stitch-summary, .stitch-ranking, .stitch-figure, .stitch-empty) {
+:is(.dark, [data-theme="dark"]) .stitch-dashboard :is(.stitch-summary, .stitch-ranking, .stitch-figure, .stitch-empty) {
   background: var(--theme-canvas);
   border: 1px solid var(--theme-line);
 }
-.dark .stitch-dashboard :is(.stitch-period, .bg-surface-container, .bg-surface-container-high,
+:is(.dark, [data-theme="dark"]) .stitch-dashboard :is(.stitch-period, .bg-surface-container, .bg-surface-container-high,
 .bg-primary-fixed\/30, .bg-outline-variant, .stitch-rank-track, .spending-pace-track) {
   background: var(--theme-field);
   border-color: var(--theme-line);
 }
-.dark .stitch-dashboard .bg-outline-variant\/30 { background: var(--theme-line); }
-.dark .stitch-dashboard .text-on-surface { color: var(--theme-ink); }
-.dark .stitch-dashboard :is(.text-on-surface-variant, .text-outline, .mobile-rank-share) { color: var(--theme-muted); }
-.dark .stitch-dashboard :is(.text-primary, .text-on-primary-fixed-variant, .stitch-peak) { color: var(--theme-indigo); }
-.dark .stitch-dashboard :is(.text-secondary, .text-on-secondary-container, .spending-pace strong) { color: var(--theme-emerald); }
-.dark .stitch-dashboard :is(.bg-primary, .bg-primary-container) { background: var(--theme-indigo); }
-.dark .stitch-metrics .bg-primary-container { box-shadow: 0 0 8px var(--theme-indigo); }
-.dark .stitch-metrics .bg-secondary { box-shadow: 0 0 8px var(--theme-emerald); }
-.dark .stitch-dashboard .bg-secondary { background: var(--theme-emerald); }
-.dark .stitch-dashboard .bg-tertiary { background: var(--theme-rose); }
-.dark .stitch-dashboard :is(.bg-secondary-container\/40, .bg-secondary-container\/50, .bg-secondary-fixed\/40) {
+:is(.dark, [data-theme="dark"]) .stitch-dashboard .bg-outline-variant\/30 { background: var(--theme-line); }
+:is(.dark, [data-theme="dark"]) .stitch-dashboard .text-on-surface { color: var(--theme-ink); }
+:is(.dark, [data-theme="dark"]) .stitch-dashboard :is(.text-on-surface-variant, .text-outline, .mobile-rank-share) { color: var(--theme-secondary); }
+:is(.dark, [data-theme="dark"]) .stitch-dashboard :is(.text-primary, .text-on-primary-fixed-variant, .stitch-peak) { color: var(--theme-indigo); }
+:is(.dark, [data-theme="dark"]) .stitch-dashboard :is(.text-secondary, .text-on-secondary-container, .spending-pace strong) { color: var(--theme-emerald); }
+:is(.dark, [data-theme="dark"]) .stitch-dashboard :is(.bg-primary, .bg-primary-container) { background: var(--theme-indigo); }
+:is(.dark, [data-theme="dark"]) .stitch-metrics .bg-primary-container { box-shadow: 0 0 8px var(--theme-indigo); }
+:is(.dark, [data-theme="dark"]) .stitch-metrics .bg-secondary { box-shadow: 0 0 8px var(--theme-emerald); }
+:is(.dark, [data-theme="dark"]) .stitch-dashboard .bg-secondary { background: var(--theme-emerald); }
+:is(.dark, [data-theme="dark"]) .stitch-dashboard .bg-tertiary { background: var(--theme-rose); }
+:is(.dark, [data-theme="dark"]) .stitch-dashboard :is(.bg-secondary-container\/40, .bg-secondary-container\/50, .bg-secondary-fixed\/40) {
   background: var(--theme-emerald-soft);
 }
-.dark .stitch-dashboard .spending-pace-track span { background: linear-gradient(90deg, #10b981, var(--theme-emerald)); }
-.dark .stitch-dashboard .stitch-pills button { background: var(--theme-field); color: var(--theme-muted); }
-.dark .stitch-dashboard .stitch-pills button:hover { background: var(--theme-hover); color: var(--theme-ink); }
-.dark .stitch-dashboard .stitch-pills button[aria-pressed=true] { background: var(--theme-action); color: #fff; }
-.dark .stitch-chart [data-stitch=line],
-.dark .stitch-chart [data-point] {
+:is(.dark, [data-theme="dark"]) .stitch-dashboard .spending-pace-track span { background: var(--theme-indigo); }
+:is(.dark, [data-theme="dark"]) .stitch-dashboard .stitch-pills button { background: var(--theme-field); border: 1px solid var(--theme-line); color: var(--theme-secondary); }
+:is(.dark, [data-theme="dark"]) .stitch-dashboard .stitch-pills button:hover { background: var(--theme-hover); color: var(--theme-ink); }
+:is(.dark, [data-theme="dark"]) .stitch-dashboard .stitch-pills button[aria-pressed=true] { background: var(--theme-indigo); color: var(--theme-canvas); }
+:is(.dark, [data-theme="dark"]) .stitch-chart [data-stitch=line],
+:is(.dark, [data-theme="dark"]) .stitch-chart [data-point] {
   stroke: var(--theme-indigo);
-  filter: drop-shadow(0 0 5px rgb(129 140 248 / 78%));
+  filter: drop-shadow(0 0 5px color-mix(in srgb, var(--theme-indigo) 78%, transparent));
 }
-.dark .stitch-chart [data-point] { fill: var(--theme-canvas); }
-.dark .stitch-chart stop { stop-color: #6366f1; }
-.dark .home-recent .recent-tag { background: var(--theme-field); color: var(--theme-muted); }
-.dark .home-recent :is(.recent-tag.credit, .movement.credit) { background: var(--theme-emerald-soft); color: var(--theme-emerald); }
-.dark .home-recent .movement.debit { background: var(--theme-rose-soft); color: var(--theme-rose-ink); }
-.dark .home-recent :is(.movement.transport, .movement.fun) { background: var(--theme-indigo-soft); color: var(--theme-indigo); }
-.dark .stitch-dashboard .home-recent .recent-amount .debit { color: var(--theme-rose-ink); }
-.dark .stitch-dashboard .home-recent .recent-amount .credit { color: var(--theme-emerald); }
+:is(.dark, [data-theme="dark"]) .stitch-chart [data-point] { fill: var(--theme-canvas); }
+:is(.dark, [data-theme="dark"]) .stitch-chart stop { stop-color: var(--theme-indigo); }
+:is(.dark, [data-theme="dark"]) .home-recent .recent-tag { background: var(--theme-field); color: var(--theme-secondary); }
+:is(.dark, [data-theme="dark"]) .home-recent :is(.recent-tag.credit, .movement.credit) { background: var(--theme-emerald-soft); color: var(--theme-emerald); }
+:is(.dark, [data-theme="dark"]) .home-recent .movement.debit { background: var(--theme-rose-soft); color: var(--theme-rose-ink); }
+:is(.dark, [data-theme="dark"]) .home-recent :is(.movement.transport, .movement.fun) { background: var(--theme-indigo-soft); color: var(--theme-indigo); }
+:is(.dark, [data-theme="dark"]) .stitch-dashboard .home-recent .recent-amount .debit { color: var(--theme-rose); }
+:is(.dark, [data-theme="dark"]) .stitch-dashboard .home-recent .recent-amount .credit { color: var(--theme-emerald); }
 
 @media (max-width: 767px) {
-  .dark .stitch-dashboard .home-recent { background: transparent; border: 0; box-shadow: none; }
-  .dark .stitch-dashboard [data-stitch=recent-rows] {
+  :is(.dark, [data-theme="dark"]) .stitch-dashboard .home-recent { background: transparent; border: 0; box-shadow: none; }
+  :is(.dark, [data-theme="dark"]) .stitch-dashboard [data-stitch=recent-rows] {
     background: var(--theme-card);
     border: 1px solid var(--theme-line);
     box-shadow: var(--theme-shadow);
   }
-  .dark .stitch-dashboard .stitch-balance .stitch-summary { background: transparent; border: 0; }
+  :is(.dark, [data-theme="dark"]) .stitch-dashboard .stitch-balance .stitch-summary { background: transparent; border: 0; }
 }
 
+/* Financial values */
+:is(.dark, [data-theme="dark"]) :is([data-stitch=balance], [data-stitch=salary-balance], [data-total=balance])[data-tone=income] {
+  color: var(--theme-emerald);
+}
+:is(.dark, [data-theme="dark"]) :is([data-stitch=balance], [data-stitch=salary-balance], [data-total=balance])[data-tone=expense] {
+  color: var(--theme-rose-ink);
+}
+:is(.dark, [data-theme="dark"]) .transactions-table .transactions-amount { font-family: "Hanken Grotesk", system-ui, sans-serif; }
+
 /* Transactions */
-.dark .transactions-page {
+:is(.dark, [data-theme="dark"]) .transactions-page {
   --transaction-ink: var(--theme-ink);
-  --transaction-muted: var(--theme-muted);
+  --transaction-muted: var(--theme-secondary);
   --transaction-indigo: var(--theme-indigo);
   --transaction-pill: var(--theme-field);
   --transaction-income: var(--theme-emerald);
   --transaction-expense: var(--theme-rose-ink);
   --transaction-shadow: var(--theme-shadow);
 }
-.dark :is(.transactions-filters, .transactions-panel, .transactions-period-bar, .transactions-stat,
+:is(.dark, [data-theme="dark"]) :is(.transactions-filters, .transactions-panel, .transactions-period-bar, .transactions-stat,
 .transactions-summary, .transactions-extra-filters, .transactions-delete-dialog) {
   background: var(--theme-card);
   color: var(--theme-ink);
   border-color: var(--theme-line);
   box-shadow: var(--theme-shadow);
 }
-.dark :is(.transactions-stat, .transactions-period-bar, .transactions-filters, .transactions-panel, .transactions-delete-dialog) {
+:is(.dark, [data-theme="dark"]) :is(.transactions-stat, .transactions-period-bar, .transactions-filters, .transactions-panel, .transactions-delete-dialog) {
   border: 1px solid var(--theme-line);
 }
-.dark :is(.month-picker, .transactions-export, .transactions-search-row, .transactions-filters .transactions-search,
+:is(.dark, [data-theme="dark"]) :is(.month-picker, .transactions-export, .transactions-search-row, .transactions-filters .transactions-search,
 .transactions-filters .transactions-types, .transactions-extra-filters .transactions-select, .transactions-select,
 .transactions-page-size select, .transactions-clear, .transactions-footer, .transactions-view .transactions-filter-toggle) {
   background: var(--theme-field);
   border-color: var(--theme-line);
   color: var(--theme-ink);
 }
-.dark :is(.transactions-search:focus-within, .transactions-filters .transactions-search:focus-within) {
+:is(.dark, [data-theme="dark"]) :is(.transactions-search:focus-within, .transactions-filters .transactions-search:focus-within) {
   outline: var(--focus-ring);
   background: var(--theme-hover);
 }
-.dark :is(.transactions-search input, .transactions-select select, .month-picker button) { color: var(--theme-ink); }
-.dark .transactions-types button[aria-pressed=false] { background: var(--theme-field); color: var(--theme-muted); }
+:is(.dark, [data-theme="dark"]) :is(.transactions-search input, .transactions-select select, .month-picker button) { color: var(--theme-ink); }
+:is(.dark, [data-theme="dark"]) .transactions-types button[aria-pressed=false] { background: var(--theme-field); border: 1px solid var(--theme-line); color: var(--theme-secondary); }
 
 @media (max-width: 767px) {
-  .dark .transactions-page :is(.transactions-filters, .transactions-filters .transactions-types) {
+  :is(.dark, [data-theme="dark"]) .transactions-page :is(.transactions-filters, .transactions-filters .transactions-types) {
     background: transparent;
     border: 0;
     box-shadow: none;
   }
+  :is(.dark, [data-theme="dark"]) .transactions-search-row .transactions-search { border: 0; }
 }
-.dark :is(.month-picker button:hover:not(:disabled), .transactions-types button:not([aria-pressed=true]):hover,
+:is(.dark, [data-theme="dark"]) :is(.month-picker button:hover:not(:disabled), .transactions-types button:not([aria-pressed=true]):hover,
 .transactions-clear:hover:not(:disabled), .transactions-edit:hover) { background: var(--theme-hover); }
-.dark .transactions-table :is(td, th, tr) { border-color: var(--theme-line); }
-.dark .transactions-table th { background: var(--theme-field); color: var(--theme-muted); }
-.dark .transactions-table tbody tr { background: var(--theme-card); }
-.dark .transactions-table tbody tr:nth-child(even) { background: #192235; }
-.dark .transactions-table tbody tr:hover { background: var(--theme-hover); }
-.dark :is(.transactions-category, .transactions-stat-badge, .transactions-balance-breakdown, .transactions-delete-summary) {
+:is(.dark, [data-theme="dark"]) .transactions-table :is(td, th, tr) { border-color: var(--theme-line); }
+:is(.dark, [data-theme="dark"]) .transactions-table th { background: var(--theme-field); color: var(--theme-secondary); }
+:is(.dark, [data-theme="dark"]) .transactions-table tbody tr { background: var(--theme-card); }
+:is(.dark, [data-theme="dark"]) .transactions-table tbody tr:hover { background: var(--theme-hover); }
+:is(.dark, [data-theme="dark"]) :is(.transactions-category, .transactions-stat-badge, .transactions-balance-breakdown, .transactions-delete-summary) {
   background: var(--theme-field);
   border-color: var(--theme-line);
   color: var(--theme-ink);
 }
-.dark .transactions-stat { --stat-icon-fill: var(--theme-indigo-soft); }
-.dark .transactions-stat[data-tone=income] { --stat-icon-fill: var(--theme-emerald-soft); }
-.dark .transactions-stat[data-tone=expense] { --stat-icon-fill: var(--theme-rose-soft); }
-.dark :is(.transactions-table [data-tone=income] .transactions-category-icon,
+:is(.dark, [data-theme="dark"]) .transactions-stat { --stat-icon-fill: var(--theme-indigo-soft); }
+:is(.dark, [data-theme="dark"]) .transactions-stat[data-tone=income] { --stat-icon-fill: var(--theme-emerald-soft); }
+:is(.dark, [data-theme="dark"]) .transactions-stat[data-tone=expense] { --stat-icon-fill: var(--theme-rose-soft); }
+:is(.dark, [data-theme="dark"]) :is(.transactions-table [data-tone=income] .transactions-category-icon,
 .transactions-table [data-tone=income] .transactions-category, .transactions-status[data-status=pago]) {
   background: var(--theme-emerald-soft);
   color: var(--theme-emerald);
 }
-.dark :is(.transactions-table [data-tone=transfer] .transactions-category-icon,
+:is(.dark, [data-theme="dark"]) :is(.transactions-table [data-tone=transfer] .transactions-category-icon,
 .transactions-table [data-tone=transfer] .transactions-category, .transactions-category-icon) {
   background: var(--theme-indigo-soft);
   color: var(--theme-indigo);
 }
-.dark :is(.transactions-table [data-tone=expense] .transactions-category-icon, .transactions-delete-icon,
+:is(.dark, [data-theme="dark"]) :is(.transactions-table [data-tone=expense] .transactions-category-icon, .transactions-delete-icon,
 .transactions-delete:hover:not(:disabled)) { background: var(--theme-rose-soft); color: var(--theme-rose-ink); }
-.dark :is(.transactions-amount[data-tone=expense], .transactions-delete-summary [data-tone=expense],
-.transactions-delete-dialog .transactions-delete-error) { color: var(--theme-rose-ink); }
-.dark .transactions-delete-summary [data-tone=income] { color: var(--theme-emerald); }
-.dark .transactions-status[data-status=pendente] { background: var(--theme-amber-soft); color: var(--theme-amber); }
-.dark .transactions-status[data-status=unknown] { background: var(--theme-hover); color: var(--theme-muted); }
-.dark .transactions-delete-dialog p { color: var(--theme-muted); }
-.dark .transactions-delete-dialog::backdrop { background: var(--theme-scrim); }
-.dark .transactions-delete-dialog-actions button:not([data-delete-confirm]) {
+:is(.dark, [data-theme="dark"]) .transactions-amount[data-tone=expense] { color: var(--theme-rose); }
+:is(.dark, [data-theme="dark"]) :is(.transactions-table tr:hover .transactions-amount[data-tone=expense],
+.transactions-delete-summary [data-tone=expense], .transactions-delete-dialog .transactions-delete-error) { color: var(--theme-rose-ink); }
+:is(.dark, [data-theme="dark"]) .transactions-delete-summary [data-tone=income] { color: var(--theme-emerald); }
+:is(.dark, [data-theme="dark"]) .transactions-status[data-status=pendente] { background: var(--theme-amber-soft); color: var(--theme-amber); }
+:is(.dark, [data-theme="dark"]) .transactions-status[data-status=unknown] { background: var(--theme-hover); color: var(--theme-secondary); }
+:is(.dark, [data-theme="dark"]) .transactions-delete-dialog p { color: var(--theme-secondary); }
+:is(.dark, [data-theme="dark"]) .transactions-delete-dialog::backdrop { background: var(--theme-scrim); }
+:is(.dark, [data-theme="dark"]) .transactions-delete-dialog-actions button:not([data-delete-confirm]) {
   background: var(--theme-field);
   color: var(--theme-ink);
 }
-.dark .transactions-delete-dialog-actions button:not([data-delete-confirm]):enabled:hover { background: var(--theme-hover); }
-.dark :is(.transactions-delete-dialog-actions [data-delete-confirm], #settings-delete button[type=submit]) {
-  background: #be123c;
+:is(.dark, [data-theme="dark"]) .transactions-delete-dialog-actions button:not([data-delete-confirm]):enabled:hover { background: var(--theme-hover); }
+:is(.dark, [data-theme="dark"]) :is(.transactions-delete-dialog-actions [data-delete-confirm], #settings-delete button[type=submit]) {
+  background: var(--theme-rose);
   border-color: var(--theme-rose);
-  color: #fff;
+  color: var(--theme-canvas);
 }
-.dark :is(.transactions-delete-dialog-actions [data-delete-confirm], #settings-delete button[type=submit]):enabled:hover {
-  background: #9f1239;
+:is(.dark, [data-theme="dark"]) :is(.transactions-delete-dialog-actions [data-delete-confirm], #settings-delete button[type=submit]):enabled:hover {
+  background: var(--theme-rose-ink);
 }
 
 /* Entry form and mobile bottom sheet */
-.dark :is(.entry-view, .entry-sheet) {
+:is(.dark, [data-theme="dark"]) :is(.entry-view, .entry-sheet) {
   --entry-indigo: var(--theme-indigo);
   --entry-soft: var(--theme-field);
-  --entry-muted: var(--theme-muted);
+  --entry-muted: var(--theme-secondary);
 }
-.dark :is(.entry-card, .entry-sheet, .entry-sheet-header, .entry-sheet-footer, .entry-dialog) {
+:is(.dark, [data-theme="dark"]) :is(.entry-card, .entry-sheet, .entry-sheet-header, .entry-sheet-footer, .entry-dialog) {
   background: var(--theme-card);
   color: var(--theme-ink);
   border-color: var(--theme-line);
   box-shadow: var(--theme-shadow);
 }
-.dark :is(.entry-card, .entry-sheet, .entry-dialog) { border: 1px solid var(--theme-line); }
-.dark :is(.entry-value, .entry-scheduling, .entry-drop, .entry-form input:not([type=radio]):not([type=checkbox]),
+:is(.dark, [data-theme="dark"]) :is(.entry-card, .entry-sheet, .entry-dialog) { border: 1px solid var(--theme-line); }
+:is(.dark, [data-theme="dark"]) :is(.entry-value, .entry-scheduling, .entry-drop, .entry-form input:not([type=radio]):not([type=checkbox]),
 .entry-form select, .entry-form textarea, .entry-sheet-close, .entry-sheet .entry-segments, .entry-shortcuts button) {
   background: var(--theme-field);
   color: var(--theme-ink);
-  border-color: var(--theme-control-line);
+  border-color: var(--theme-line);
 }
-.dark :is(.entry-form input:not([type=radio]):not([type=checkbox]), .entry-form select, .entry-form textarea,
+:is(.dark, [data-theme="dark"]) :is(.entry-form input:not([type=radio]):not([type=checkbox]), .entry-form select, .entry-form textarea,
 .auth-input :is(input, select)):focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
-.dark :is(.entry-form [aria-invalid=true]:not(#entry-amount), .entry-sheet .entry-value:has([aria-invalid=true])) { border-color: var(--theme-rose); }
-.dark :is(.entry-badge, .entry-value > .entry-badge, .entry-value > button, .entry-drop label .entry-icon,
+:is(.dark, [data-theme="dark"]) :is(.entry-form [aria-invalid=true]:not(#entry-amount), .entry-sheet .entry-value:has([aria-invalid=true])) { border-color: var(--theme-rose); }
+:is(.dark, [data-theme="dark"]) :is(.entry-badge, .entry-value > .entry-badge, .entry-value > button, .entry-drop label .entry-icon,
 .entry-intro .entry-badge, .entry-actions button:not(.entry-primary), .entry-receipt-selected button) {
   background: var(--theme-hover);
-  border-color: var(--theme-control-line);
+  border-color: var(--theme-line);
   color: var(--theme-ink);
 }
-.dark :is(.entry-intro-details p, .entry-form small) { color: var(--theme-muted); }
-.dark :is(.entry-intro a, .entry-actions a) { color: var(--theme-indigo); }
-.dark .entry-layout[data-kind] { --entry-accent: var(--theme-rose); --entry-tone: var(--theme-rose-ink); --entry-tint: var(--theme-rose-soft); }
-.dark .entry-layout[data-kind=Receita] { --entry-accent: var(--theme-emerald); --entry-tone: var(--theme-emerald); --entry-tint: var(--theme-emerald-soft); }
-.dark .entry-layout[data-kind="Transfer\00eancia"] { --entry-accent: var(--theme-indigo); --entry-tone: var(--theme-indigo); --entry-tint: var(--theme-indigo-soft); }
-.dark .entry-segments input:checked + span { background: var(--entry-tint); color: var(--entry-tone); }
-.dark .entry-shortcuts button[aria-pressed=true] { background: var(--theme-indigo-soft); color: var(--theme-indigo); }
-.dark .entry-feedback:not(:empty) { background: var(--theme-rose-soft); color: var(--theme-rose-ink); }
-.dark .entry-preview [data-status=Pago] { background: var(--theme-emerald-soft); color: var(--theme-emerald); }
-.dark .entry-preview [data-status=Pendente] { background: var(--theme-amber-soft); color: var(--theme-amber); }
-.dark .entry-curve svg { color: var(--theme-emerald); }
-.dark :is(.entry-tip, .entry-toast:not(:empty)) { background: var(--theme-indigo-soft); color: var(--theme-ink); }
-.dark .entry-tip p { color: var(--theme-muted); }
-.dark :is(.entry-sheet, .entry-dialog)::backdrop { background: var(--theme-scrim); }
+:is(.dark, [data-theme="dark"]) :is(.entry-intro-details p, .entry-form small) { color: var(--theme-secondary); }
+:is(.dark, [data-theme="dark"]) :is(.entry-intro a, .entry-actions a) { color: var(--theme-indigo); }
+:is(.dark, [data-theme="dark"]) .entry-layout[data-kind] { --entry-accent: var(--theme-rose); --entry-tone: var(--theme-rose-ink); --entry-tint: var(--theme-rose-soft); }
+:is(.dark, [data-theme="dark"]) .entry-layout[data-kind=Receita] { --entry-accent: var(--theme-emerald); --entry-tone: var(--theme-emerald); --entry-tint: var(--theme-emerald-soft); }
+:is(.dark, [data-theme="dark"]) .entry-layout[data-kind="Transfer\00eancia"] { --entry-accent: var(--theme-indigo); --entry-tone: var(--theme-indigo); --entry-tint: var(--theme-indigo-soft); }
+:is(.dark, [data-theme="dark"]) .entry-segments input:checked + span { background: var(--entry-tint); color: var(--entry-tone); }
+:is(.dark, [data-theme="dark"]) .entry-sheet .entry-types .entry-segments { background: var(--theme-field); border: 1px solid var(--theme-line); }
+:is(.dark, [data-theme="dark"]) .entry-sheet .entry-layout[data-kind] .entry-types input:checked + span {
+  background: var(--entry-accent);
+  color: var(--theme-canvas);
+}
+:is(.dark, [data-theme="dark"]) .entry-sheet .entry-sheet-status input[value=Pago]:checked + span {
+  background: var(--theme-emerald-soft); color: var(--theme-emerald);
+}
+:is(.dark, [data-theme="dark"]) .entry-sheet .entry-sheet-status input[value=Pendente]:checked + span {
+  background: var(--theme-amber-soft); color: var(--theme-amber);
+}
+:is(.dark, [data-theme="dark"]) :is(.entry-drop label .entry-icon, .entry-sheet-close) { background: var(--theme-hover); }
+:is(.dark, [data-theme="dark"]) .entry-sheet .entry-amount-line input::placeholder { color: var(--theme-placeholder); }
+:is(.dark, [data-theme="dark"]) .entry-shortcuts button[aria-pressed=true] { background: var(--theme-indigo-soft); color: var(--theme-indigo); }
+:is(.dark, [data-theme="dark"]) .entry-feedback:not(:empty) { background: var(--theme-rose-soft); color: var(--theme-rose-ink); }
+:is(.dark, [data-theme="dark"]) .entry-preview [data-status=Pago] { background: var(--theme-emerald-soft); color: var(--theme-emerald); }
+:is(.dark, [data-theme="dark"]) .entry-preview [data-status=Pendente] { background: var(--theme-amber-soft); color: var(--theme-amber); }
+:is(.dark, [data-theme="dark"]) .entry-curve svg { color: var(--theme-emerald); }
+:is(.dark, [data-theme="dark"]) :is(.entry-tip, .entry-toast:not(:empty)) { background: var(--theme-indigo-soft); color: var(--theme-ink); }
+:is(.dark, [data-theme="dark"]) .entry-tip p { color: var(--theme-secondary); }
+:is(.dark, [data-theme="dark"]) :is(.entry-sheet, .entry-dialog)::backdrop { background: var(--theme-scrim); }
 
 /* Configurações */
-.dark .settings-content {
+:is(.dark, [data-theme="dark"]) .settings-content {
   --settings-surface: var(--theme-card);
   --settings-soft: var(--theme-field);
-  --settings-border: var(--theme-control-line);
+  --settings-border: var(--theme-line);
   --settings-danger: var(--theme-rose-ink);
-  --settings-accent: #4f46e5;
+  --settings-accent: var(--theme-indigo);
   --settings-field: var(--theme-field);
-  --settings-field-edge: var(--theme-control-line);
+  --settings-field-edge: var(--theme-line);
   --settings-field-readonly: var(--theme-canvas);
   --settings-focus: var(--theme-indigo);
-  --settings-rose: var(--theme-rose-soft);
+  --settings-rose: var(--theme-danger-fill);
   --settings-rose-badge: #552638;
   --settings-rose-outline: var(--theme-rose);
 }
-.dark :is(.settings-card, .settings-content dialog) {
+:is(.dark, [data-theme="dark"]) :is(.settings-card, .settings-content dialog) {
   background: var(--theme-card);
   border: 1px solid var(--theme-line);
   box-shadow: var(--theme-shadow);
 }
-.dark .settings-identity {
+:is(.dark, [data-theme="dark"]) .settings-identity {
   background: linear-gradient(115deg, var(--theme-indigo-soft), var(--theme-field));
   border: 1px solid var(--theme-line);
 }
-.dark .settings-service { border: 1px solid var(--theme-line); }
-.dark .settings-service-logo { background: var(--theme-hover); }
-.dark :is(.settings-status, .settings-verified) { background: var(--theme-emerald-soft); color: var(--theme-emerald); }
-.dark .settings-sync::before { color: var(--theme-emerald); }
-.dark .settings-content [data-avatar-remove] { color: var(--theme-emerald); }
-.dark .settings-content dialog::backdrop { background: var(--theme-scrim); }
-.dark .settings-danger { background: var(--theme-rose-soft); border-color: rgb(244 63 94 / 45%); }
-.dark .settings-danger :is(h2 .settings-icon, .settings-warning) { color: var(--theme-rose-ink); }
+:is(.dark, [data-theme="dark"]) .settings-service { border: 1px solid var(--theme-line); }
+:is(.dark, [data-theme="dark"]) .settings-service-logo { background: var(--theme-hover); }
+:is(.dark, [data-theme="dark"]) :is(.settings-status, .settings-verified) { background: var(--theme-emerald-soft); color: var(--theme-emerald); }
+:is(.dark, [data-theme="dark"]) .settings-sync::before { color: var(--theme-emerald); }
+:is(.dark, [data-theme="dark"]) .settings-content [data-avatar-remove] { color: var(--theme-emerald); }
+:is(.dark, [data-theme="dark"]) .settings-content dialog::backdrop { background: var(--theme-scrim); }
+:is(.dark, [data-theme="dark"]) .settings-content .settings-danger { background: var(--theme-danger-fill); border-color: var(--theme-danger-border); }
+:is(.dark, [data-theme="dark"]) .settings-danger :is(h2 .settings-icon, .settings-warning) { color: var(--theme-rose); }
 
 /* Auth, including recovery. The Google button keeps its branded artwork. */
-.dark body.account-gated,
-.dark .auth-page { background: var(--theme-canvas); color: var(--theme-ink); }
-.dark :is(.auth-shell, .auth-shell.auth-recovery-shell, .auth-meta details p) {
+:is(.dark, [data-theme="dark"]) body.account-gated,
+:is(.dark, [data-theme="dark"]) .auth-page { background: var(--theme-canvas); color: var(--theme-ink); }
+:is(.dark, [data-theme="dark"]) :is(.auth-shell, .auth-shell.auth-recovery-shell, .auth-meta details p) {
   background: var(--theme-card);
   border-color: var(--theme-line);
   box-shadow: var(--theme-shadow);
 }
-.dark .auth-story { background: linear-gradient(135deg, var(--theme-indigo-soft), var(--theme-card)); }
-.dark :is(.auth-example, .auth-tabs) { background: var(--theme-field); border-color: var(--theme-line); }
-.dark :is(.auth-meta, .auth-footer, .auth-note, .auth-assurance, .auth-story p, .auth-intro,
+:is(.dark, [data-theme="dark"]) .auth-story { background: linear-gradient(135deg, var(--theme-indigo-soft), var(--theme-card)); }
+:is(.dark, [data-theme="dark"]) :is(.auth-example, .auth-tabs) { background: var(--theme-field); border-color: var(--theme-line); }
+:is(.dark, [data-theme="dark"]) :is(.auth-meta, .auth-footer, .auth-note, .auth-assurance, .auth-story p, .auth-intro,
 .auth-example-head small, .auth-amount small, .auth-label-row small, .auth-strength small,
 .auth-input > i, #auth-eye, .auth-recovery-eye, .auth-content #auth-google-unavailable,
-.auth-divider, .auth-tabs a:not([aria-current]), .auth-content .auth-recovery-account) { color: var(--theme-muted); }
-.dark :is(.auth-input input, .auth-input select) {
+.auth-divider, .auth-tabs a:not([aria-current]), .auth-content .auth-recovery-account) { color: var(--theme-secondary); }
+:is(.dark, [data-theme="dark"]) :is(.auth-input input, .auth-input select) {
   background: var(--theme-field);
   color: var(--theme-ink);
-  border: 1px solid var(--theme-control-line);
+  border: 1px solid var(--theme-line);
 }
-.dark :is(.auth-input input, .auth-input select):focus { background: var(--theme-hover); outline: var(--focus-ring); }
-.dark .auth-input input::placeholder { color: var(--theme-muted); }
-.dark :is(.auth-divider::before, .auth-divider::after) { background: var(--theme-line); }
-.dark :is(.auth-forgot, .auth-recovery-back, .auth-meta a, .auth-footer a) { color: var(--theme-indigo); }
-.dark :is(.auth-badge, .auth-example-head strong, .auth-content .auth-recovery-success) {
+:is(.dark, [data-theme="dark"]) :is(.auth-input input, .auth-input select):focus { background: var(--theme-hover); outline: var(--focus-ring); }
+:is(.dark, [data-theme="dark"]) .auth-input input::placeholder { color: var(--theme-placeholder); }
+:is(.dark, [data-theme="dark"]) .auth-divider::before, :is(.dark, [data-theme="dark"]) .auth-divider::after { background: var(--theme-line); }
+:is(.dark, [data-theme="dark"]) .auth-strength meter::-webkit-meter-bar { background: var(--theme-field); border-color: var(--theme-line); }
+:is(.dark, [data-theme="dark"]) .auth-strength meter::-webkit-meter-optimum-value { background: var(--theme-indigo); }
+:is(.dark, [data-theme="dark"]) .auth-strength meter::-moz-meter-bar { background: var(--theme-indigo); }
+:is(.dark, [data-theme="dark"]) :is(.auth-forgot, .auth-recovery-back, .auth-meta a, .auth-footer a) { color: var(--theme-indigo); }
+:is(.dark, [data-theme="dark"]) :is(.auth-badge, .auth-example-head strong, .auth-content .auth-recovery-success) {
   background: var(--theme-emerald-soft);
   color: var(--theme-emerald);
 }
-.dark :is(.auth-note i, .auth-assurance i, .auth-footer i) { color: var(--theme-emerald); }
-.dark .auth-badge b { background: var(--theme-emerald); }
-.dark .auth-example-head > i { background: var(--theme-indigo-soft); color: var(--theme-indigo); }
-.dark :is(.auth-content #auth-status, .auth-content .auth-recovery-error) { color: var(--theme-rose-ink); }
-.dark .auth-content button.auth-google {
+:is(.dark, [data-theme="dark"]) :is(.auth-note i, .auth-assurance i, .auth-footer i) { color: var(--theme-emerald); }
+:is(.dark, [data-theme="dark"]) .auth-badge b { background: var(--theme-emerald); }
+:is(.dark, [data-theme="dark"]) .auth-example-head > i { background: var(--theme-indigo-soft); color: var(--theme-indigo); }
+:is(.dark, [data-theme="dark"]) :is(.auth-content #auth-status, .auth-content .auth-recovery-error) { color: var(--theme-rose-ink); }
+:is(.dark, [data-theme="dark"]) .auth-content button.auth-google {
   background: #131314;
   color: #e3e3e3;
   border-color: #8e918f;
 }
-.dark .auth-content button.auth-google:hover:not(:disabled) { background: #252526; }
+:is(.dark, [data-theme="dark"]) .auth-content button.auth-google:hover:not(:disabled) { background: #252526; }

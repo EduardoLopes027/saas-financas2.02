@@ -81,6 +81,7 @@ const rows = (items, recent = false) => '<ul>' + items.map(item => {
     + (recent ? '<div class="recent-amount">' + amount + '<small>' + item.type + '</small></div>' : amount) + '</li>';
 }).join('') + '</ul>';
 const options = (values,selected) => values.map(value=>'<option'+(value===selected?' selected':'')+'>'+value+'</option>').join('');
+const balanceTone = cents => cents > 0 ? 'income' : cents < 0 ? 'expense' : 'neutral';
 const sum = items => items.reduce((total,item)=>total+item.amount,0);
 
 const stitchSlot = (root,name) => root.querySelector('[data-stitch="' + name + '"]');
@@ -282,6 +283,7 @@ function mountHome(showDashboard){
     stitchSlot(main,'mobile-spent').textContent=format(sum(category ? expenses.filter(item=>item.category===category) : expenses));
   }));
   const toggle = home.querySelector('#toggleSaldoBtn');
+  stitchSlot(home,'salary-balance').dataset.tone = balanceTone(salary?.balance ?? 0);
   const balanceText = stitchSlot(home,'balance');
   const prefix = balanceText.parentElement.querySelector('[data-prefix]');
   const updateBalanceVisibility = () => {
@@ -291,6 +293,7 @@ function mountHome(showDashboard){
     toggle.firstElementChild.textContent=balanceHidden ? 'visibility_off' : 'visibility';
     prefix.hidden=balanceHidden;
     balanceText.textContent=balanceHidden ? '••••••' : values.balance;
+    balanceText.dataset.tone = balanceHidden ? 'neutral' : balanceTone(balance);
     balanceText.setAttribute('aria-label',balanceHidden ? 'Saldo oculto' : format(balance));
   };
   updateBalanceVisibility();
@@ -397,6 +400,7 @@ function updateTransactionSummary(inPeriod){
   const carryOver = main.querySelector('[data-detail=carry-over]');
   balance.textContent = signedMoney(monthly.total, monthly.total < 0 ? '−' : '+');
   balance.classList.toggle('negative', monthly.total < 0);
+  balance.dataset.tone = balanceTone(monthly.total);
   carryOver.textContent = signedMoney(monthly.carryOver, monthly.carryOver < 0 ? '−' : '+');
   carryOver.classList.toggle('negative', monthly.carryOver < 0);
   const monthlyExpenses = main.querySelector('[data-detail=monthly-expenses]');

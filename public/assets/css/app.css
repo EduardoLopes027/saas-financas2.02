@@ -137,6 +137,7 @@ main.wrap{width:100%;max-width:none;padding:28px clamp(18px,3vw,42px) 36px}.intr
   --home-page:#f5f6fc;--home-ink:#0b1c30;--home-muted:#5e6077;--home-blue:#4338ca;--home-soft:#edf2ff;
 }
 body,.home-view{background:var(--home-page);color:var(--home-ink)}
+input::placeholder,textarea::placeholder{color:var(--muted);opacity:1}
 body{--sidebar-width:clamp(208px,20vw,314px);--sidebar-inset:clamp(12px,2.5vw,40px);--sidebar-radius:40px;padding-left:calc(var(--sidebar-width) + var(--sidebar-inset)*2)}
 header,.home-view header{background:#fff;color:var(--home-ink);box-shadow:0 10px 25px #0f172a0e}
 header{bottom:auto;height:min(calc(100dvh - var(--sidebar-inset)*2),1176px)}
