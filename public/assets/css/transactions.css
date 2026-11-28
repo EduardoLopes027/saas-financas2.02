@@ -1058,10 +1058,7 @@
     grid-auto-flow: column;
     grid-auto-columns: calc(100% - 40px);
     gap: 12px;
-    margin-inline: -16px;
-    padding: 4px 16px;
     overflow-x: auto;
-    scroll-padding-inline: 16px;
     scroll-snap-type: x proximity;
     scrollbar-width: none;
   }
