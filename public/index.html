@@ -3,11 +3,24 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>FinFlow · Finanças pessoais</title>
+<script>
+  try {
+    const theme = localStorage.getItem('finflow-theme');
+    if(theme === 'light' || theme === 'dark'){
+      document.documentElement.dataset.theme = theme;
+      document.documentElement.classList.toggle('dark',theme === 'dark');
+    }
+  } catch {
+    // Browser storage is optional.
+  }
+</script>
+<style>html.dark{background:#0f172a;color-scheme:dark}</style>
 <link rel="stylesheet" href="./assets/css/stitch-home.css">
 <link rel="stylesheet" href="./assets/css/app.css">
 <link rel="stylesheet" href="./assets/css/auth.css">
 <link rel="stylesheet" href="./assets/css/transactions.css">
 <link rel="stylesheet" href="./assets/css/new-entry.css">
+<link rel="stylesheet" href="./assets/css/dark-theme.css">
 <body class="account-mode account-gated">
 <a class="skip" href="#principal">Pular para o conteúdo</a>
 <header><div class="wrap mast">

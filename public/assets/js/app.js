@@ -134,8 +134,10 @@ function homeSpending(expenses, category, days){
   const colors = ['#4338ca','#006c49','#777586'];
   stitchSlot(chart,'ranking').innerHTML = ranking.map(({name,amount},index) => {
     const share = Math.round(amount / total * 100);
-    return '<div class="stitch-rank-row" style="--rank-color:' + colors[index % colors.length] + '"><div><span>' + name + '</span><strong class="money">' + format(amount) + ' (' + share + '%)</strong><span class="mobile-rank-share">' + share + '%</span></div>'
-      + '<div class="stitch-rank-track" aria-hidden="true"><span style="width:' + share + '%;background:' + colors[index % colors.length] + '"></span></div></div>';
+    const rank = index % colors.length;
+    const color = 'var(--rank-' + (rank + 1) + ',' + colors[rank] + ')';
+    return '<div class="stitch-rank-row" style="--rank-color:' + color + '"><div><span>' + name + '</span><strong class="money">' + format(amount) + ' (' + share + '%)</strong><span class="mobile-rank-share">' + share + '%</span></div>'
+      + '<div class="stitch-rank-track" aria-hidden="true"><span style="width:' + share + '%;background:var(--rank-color)"></span></div></div>';
   }).join('');
   stitchSlot(chart,'ranking-daily').textContent = format(Math.round(total / days)) + '/dia';
   return chart;
@@ -1242,10 +1244,28 @@ function formatAccountPhone(value){
   return match ? '+55 (' + match[1] + ') ' + match[2] + '-' + match[3] : value.trim();
 }
 
+let preferredTheme = document.documentElement.dataset.theme;
+
+const interfaceTheme = () => preferredTheme ?? (accountUser?.theme === 'dark' ? 'dark' : 'light');
+
+function applyInterfaceTheme(theme){
+  document.documentElement.dataset.theme = theme;
+  document.documentElement.classList.toggle('dark',theme === 'dark');
+}
+
+function rememberInterfaceTheme(theme){
+  preferredTheme = theme;
+  applyInterfaceTheme(theme);
+  try {
+    localStorage.setItem('finflow-theme',theme);
+  } catch {
+    // Keep the selected theme for this page when browser storage is unavailable.
+  }
+}
+
 function mountSettings(focus){
   const user = accountUser;
-  const state = settingsPreferenceState();
-  const preferences = {...user,...state?.inFlight,...state?.pending};
+  const theme = interfaceTheme();
   const name = accountName();
   const locked = user ? '' : 'disabled';
   const checked = value => value ? ' checked' : '';
@@ -1334,12 +1354,12 @@ function mountSettings(focus){
       <section class="settings-card" aria-labelledby="settings-preferences">
         <h2 id="settings-preferences" tabindex="-1">${icon('tune')} Preferências do Sistema</h2>
         <form id="settings-preferences-form">
-          <fieldset ${locked}>
+          <fieldset>
             <div class="settings-option">
               <div><span id="settings-theme-label">Tema da interface</span><small>Escolha a aparência do painel.</small></div>
               <div class="settings-theme" role="group" aria-labelledby="settings-theme-label">
-                <label><input type="radio" name="theme" value="light"${checked(preferences.theme !== 'dark')}><span>Claro</span></label>
-                <label><input type="radio" name="theme" value="dark"${checked(preferences.theme === 'dark')}><span>Escuro</span></label>
+                <label><input type="radio" name="theme" value="light"${checked(theme === 'light')}><span>Claro</span></label>
+                <label><input type="radio" name="theme" value="dark"${checked(theme === 'dark')}><span>Escuro</span></label>
               </div>
             </div>
           </fieldset>
@@ -1383,18 +1403,19 @@ function wireSettings(){
   const payday = profile.elements.payday;
   const phone = profile.elements.phone;
   const state = settingsPreferenceState();
+  preferences.addEventListener('submit',event=>event.preventDefault());
+  preferences.addEventListener('change',event=>{
+    const {name,value} = event.target;
+    if(name !== 'theme' || (value !== 'light' && value !== 'dark') || preferenceState !== state) return;
+    rememberInterfaceTheme(value);
+    if(!state) return;
+    state.pending.theme = value;
+    state.failed = false;
+    clearTimeout(settingsToastTimer);
+    root.querySelector('.settings-toast').textContent='';
+    drainPreferences(state);
+  });
   if(state){
-    preferences.addEventListener('submit',event=>event.preventDefault());
-    preferences.addEventListener('change',event=>{
-      if(preferenceState !== state) return;
-      const control = event.target;
-      if(control.name !== 'theme') return;
-      state.pending.theme = control.value;
-      state.failed = false;
-      clearTimeout(settingsToastTimer);
-      root.querySelector('.settings-toast').textContent='';
-      drainPreferences(state);
-    });
     preferences.querySelector('[data-preference-retry]').addEventListener('click',()=>{
       if(preferenceState !== state) return;
       state.failed = false;
@@ -1503,14 +1524,8 @@ function wireSettings(){
 }
 
 function updateAccountChrome(authPreview){
-  const theme = accountUser?.theme === 'dark' ? 'dark' : 'light';
-  document.documentElement.dataset.theme = theme;
-  try {
-    if(accountUser) localStorage.setItem('finflow-theme',theme);
-    else localStorage.removeItem('finflow-theme');
-  } catch {
-    // The session preference still applies when browser storage is disabled.
-  }
+  if(!preferredTheme && accountUser) rememberInterfaceTheme(interfaceTheme());
+  else applyInterfaceTheme(interfaceTheme());
   document.querySelector('[data-mobile-menu]').setAttribute('aria-label', appMode==='demo' ? 'Configurações do protótipo' : 'Configurações da conta');
   document.querySelector('[data-account-name]').textContent = accountName();
   updateAccountAvatars();
