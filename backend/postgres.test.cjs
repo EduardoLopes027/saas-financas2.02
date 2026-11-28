@@ -43,6 +43,163 @@ test('A função da Vercel registra a causa do 503 sem expor credenciais e permi
   assert.doesNotMatch(JSON.stringify(log.mock.calls.map(call => call.arguments)), /senha-ficticia-secreta/);
 });
 
+test('Vercel recovery activates with Supabase configuration and fails closed without it', async t => {
+  const postgres = require('./postgres.cjs');
+  const apiModule = require.resolve('../api/index.js');
+  const requestContext = Symbol.for('@vercel/request-context');
+  const originalContext = globalThis[requestContext];
+  const originalEnv = process.env;
+  const httpFetch = globalThis.fetch;
+  const deferred = [];
+  const requests = [];
+  let attempt;
+  let grant;
+  const email = 'recovery@example.test';
+  const providerId = '3736b722-f5ab-4baf-bcc2-6fe062145a61';
+  const code = '3afd3bf9-5c4f-45d5-9654-26574547433c';
+
+  t.after(() => {
+    process.env = originalEnv;
+    if (originalContext === undefined) delete globalThis[requestContext];
+    else globalThis[requestContext] = originalContext;
+    delete require.cache[apiModule];
+  });
+  globalThis[requestContext] = { get: () => ({ waitUntil: promise => deferred.push(promise) }) };
+  t.mock.method(postgres, 'postgresStore', async () => ({
+    check: async () => {},
+    recordAttempt: async () => true,
+    async startRecovery(address, stateHash, verifier) {
+      if (address !== email) return false;
+      attempt = { stateHash, verifier, email };
+      return true;
+    },
+    async consumeRecovery(stateHash) {
+      if (attempt?.stateHash !== stateHash) return undefined;
+      const consumed = attempt;
+      attempt = undefined;
+      return consumed;
+    },
+    async issueRecoveryGrant(attempt, identity, hash, publicId) {
+      assert.equal(attempt.email, email);
+      assert.deepEqual(identity, { id: providerId, email, subject: null });
+      grant = { hash, public_id: publicId, email };
+      return true;
+    },
+    async getRecoveryGrant(hash) {
+      return hash === grant?.hash ? grant : undefined;
+    },
+  }));
+
+  let callbackUrl;
+  t.mock.method(globalThis, 'fetch', async (url, options) => {
+    const endpoint = new URL(url);
+    assert.equal(endpoint.origin, 'https://supabase.example.test');
+    assert.equal(options.headers.apikey, 'fictitious-public-key');
+    const body = JSON.parse(options.body);
+    requests.push(endpoint.pathname);
+    if (endpoint.pathname === '/auth/v1/recover') {
+      assert.equal(body.email, email);
+      assert.equal(body.code_challenge_method, 's256');
+      assert.equal(body.code_challenge, challenge(attempt.verifier));
+      callbackUrl = new URL(endpoint.searchParams.get('redirect_to'));
+      assert.equal(callbackUrl.origin, origin);
+      assert.equal(callbackUrl.pathname, '/api/auth/recovery/callback');
+      assert.match(callbackUrl.searchParams.get('state'), /^[\w-]{43}$/);
+      // GoTrue appends code to the original redirect query after email verification.
+      callbackUrl.searchParams.set('code', code);
+      return Response.json({});
+    }
+    assert.equal(endpoint.pathname + endpoint.search, '/auth/v1/token?grant_type=pkce');
+    assert.equal(body.auth_code, code);
+    assert.equal(typeof body.code_verifier, 'string');
+    const claims = Buffer.from(JSON.stringify({ sub: providerId, amr: [{ method: 'recovery', timestamp: 1795651200 }] }))
+      .toString('base64url');
+    return Response.json({
+      user: { id: providerId, email, email_confirmed_at: '2026-11-20T00:00:00Z' },
+      access_token: 'header.' + claims + '.signature',
+    });
+  });
+  t.mock.method(console, 'error', () => {});
+
+  async function withVercel(configuration, run) {
+    process.env = { ...originalEnv, APP_ORIGIN: origin };
+    for (const name of ['SUPABASE_URL', 'SUPABASE_PUBLISHABLE_KEY', 'SUPABASE_ANON_KEY', 'PASSWORD_RECOVERY_ENABLED']) {
+      delete process.env[name];
+    }
+    Object.assign(process.env, configuration);
+    delete require.cache[apiModule];
+    const server = createServer(require(apiModule));
+    await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+    const local = 'http://127.0.0.1:' + server.address().port;
+    try {
+      await run((path, options) => httpFetch(local + path, { redirect: 'manual', ...options }));
+    } finally {
+      await new Promise(resolve => server.close(resolve));
+    }
+  }
+
+  async function forgot(request, address = email, browserOrigin = origin) {
+    const response = await request('/api/index?__route=auth/forgot-password', {
+      method: 'POST', headers: { Origin: browserOrigin, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: address, redirect_to: 'https://untrusted.example.test' }),
+    });
+    await Promise.all(deferred.splice(0));
+    return response;
+  }
+
+  await withVercel({
+    SUPABASE_URL: 'https://supabase.example.test',
+    SUPABASE_PUBLISHABLE_KEY: 'fictitious-public-key',
+  }, async request => {
+    assert.equal((await forgot(request, email, 'https://untrusted.example.test')).status, 403);
+    const unknown = await forgot(request, 'unknown@example.test');
+    assert.equal(unknown.status, 202);
+    assert.deepEqual(await unknown.json(), { ok: true });
+    assert.deepEqual(requests, []);
+    const accepted = await forgot(request);
+    assert.equal(accepted.status, 202);
+    assert.deepEqual(await accepted.json(), { ok: true });
+    const query = new URLSearchParams(callbackUrl.searchParams);
+    query.set('__route', 'auth/recovery/callback');
+    const callback = await request('/api/index?' + query);
+    assert.equal(callback.status, 303);
+    assert.equal(callback.headers.get('location'), '/#redefinir-senha');
+    const raw = callback.headers.getSetCookie()[0];
+    assert.match(raw, /^__Host-finflow_recovery=.+; Path=\/; HttpOnly; Secure; SameSite=Strict; Max-Age=300$/);
+    const ready = await request('/api/index?__route=auth/reset-password', { headers: { Cookie: raw.split(';')[0] } });
+    assert.equal(ready.status, 200);
+    assert.deepEqual(await ready.json(), { ok: true, attemptId: grant.public_id, maskedEmail: 'r***@example.test' });
+    const replay = await request('/api/index?' + query);
+    assert.equal(replay.headers.get('location'), '/?auth_error=recovery_failed#login');
+    assert.deepEqual(requests, ['/auth/v1/recover', '/auth/v1/token']);
+  });
+
+  await withVercel({
+    SUPABASE_URL: ' https://supabase.example.test ',
+    SUPABASE_PUBLISHABLE_KEY: '  ',
+    SUPABASE_ANON_KEY: ' fictitious-public-key ',
+    PASSWORD_RECOVERY_ENABLED: 'false',
+  }, async request => {
+    assert.equal((await forgot(request)).status, 202);
+    assert.equal(requests.at(-1), '/auth/v1/recover');
+    assert.equal(requests.length, 3);
+  });
+
+  for (const configuration of [
+    { SUPABASE_URL: 'https://supabase.example.test' },
+    { SUPABASE_PUBLISHABLE_KEY: 'fictitious-public-key' },
+    { SUPABASE_URL: 'http://supabase.example.test', SUPABASE_PUBLISHABLE_KEY: 'fictitious-public-key' },
+  ]) {
+    await withVercel(configuration, async request => {
+      const response = await forgot(request);
+      assert.equal(response.status, 503);
+      assert.deepEqual(await response.json(), { error: 'recovery_unavailable' });
+      assert.equal((await request('/api/index?__route=auth/reset-password')).status, 401);
+    });
+  }
+  assert.equal(requests.length, 3);
+});
+
 test('Configura o pooler com TLS verificado e reconstrói certificados PEM', () => {
   const { connectionOptions } = require('./postgres.cjs');
   const url = 'postgresql://finflow_app.project:abc%40%2F%25@aws-0-region.pooler.supabase.com:6543/postgres'

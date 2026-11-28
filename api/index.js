@@ -78,22 +78,15 @@ async function initialize() {
     const origin = configuredOrigin(process.env.APP_ORIGIN);
     stage = 'PostgreSQL connection and schema check';
     await store.check();
+    const supabaseUrl = process.env.SUPABASE_URL?.trim();
+    const supabaseKey = process.env.SUPABASE_PUBLISHABLE_KEY?.trim() || process.env.SUPABASE_ANON_KEY?.trim();
     let google;
+    let recovery;
     try {
-      google = googleClient(process.env.SUPABASE_URL,
-        process.env.SUPABASE_PUBLISHABLE_KEY || process.env.SUPABASE_ANON_KEY, origin);
+      google = googleClient(supabaseUrl, supabaseKey, origin);
+      recovery = recoveryClient(supabaseUrl, supabaseKey, origin);
     } catch {
       console.error('[finflow/api] Invalid Supabase Auth configuration');
-    }
-    let recovery;
-    if (process.env.PASSWORD_RECOVERY_ENABLED === 'true') {
-      try {
-        recovery = recoveryClient(process.env.SUPABASE_URL,
-          process.env.SUPABASE_PUBLISHABLE_KEY || process.env.SUPABASE_ANON_KEY, origin);
-        if (!recovery) throw new Error();
-      } catch {
-        console.error('[finflow/api] Invalid Supabase password recovery configuration');
-      }
     }
     return createHandler(store, { secure: true, postgres: true, expectedOrigin: origin, google, recovery,
       deferRecovery: waitUntil });
