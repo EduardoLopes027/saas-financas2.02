@@ -20,9 +20,8 @@ const entryIconPaths = {
   attach_file:'m8 13 6-6a2 2 0 0 1 3 3l-7 7a4 4 0 0 1-6-6l8-8a6 6 0 0 1 8 8l-8 8'
 };
 const entryIcon = name => '<svg class="entry-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="'+ entryIconPaths[name] +'"/></svg>';
-const blankEntry = masked => ({
-  amountMasked:masked,
-  type:'Despesa', amount:masked ? '0,00' : '', date:localCalendarDate(), category:'', description:'',
+const blankEntry = () => ({
+  type:'Despesa', amount:'0,00', date:localCalendarDate(), category:'', description:'',
   paymentMethod:'', destinationPaymentMethod:'', status:'Pago', notes:'',
   repeat:false, recurrence:'Mensal', split:false, installments:2, receipt:null
 });
@@ -44,14 +43,13 @@ let entryEditor = null;
 
 function mountEntry(item = null, origin = null, asSheet = false){
   const savedDraft = draft && draft.editId === item?.id ? draft : null;
-  const masked = savedDraft?.amountMasked ?? (accountUser?.amountMask !== false);
   const baseline = item ? {
-    ...blankEntry(masked),
+    ...blankEntry(),
     editId:item.id, type:item.type, category:item.category, description:item.description, date:item.date,
-    amount:masked ? formatEntryAmount(item.amount) : formatEntryAmount(item.amount).replace(/\./g,''),
+    amount:formatEntryAmount(item.amount),
     paymentMethod:item.paymentMethod ?? '', destinationPaymentMethod:item.destinationPaymentMethod ?? '',
     status:item.status ?? '', notes:item.notes ?? '', receipt:item.receipt ?? null
-  } : blankEntry(masked);
+  } : blankEntry();
   const data = savedDraft ?? baseline;
   const sheet = asSheet ? document.createElement('dialog') : null;
   if(sheet){
@@ -88,7 +86,7 @@ function mountEntry(item = null, origin = null, asSheet = false){
         <div class="entry-value">
           <div><label for="entry-amount">${sheet ? 'Valor do lançamento' : 'Valor da transação'}</label>
           <div class="entry-amount-line"><span aria-hidden="true">R$</span>
-          <input id="entry-amount" name="amount" inputmode="${masked ? 'numeric' : 'decimal'}"
+          <input id="entry-amount" name="amount" inputmode="numeric"
             aria-label="${sheet ? 'Valor do lançamento em reais' : 'Valor da transação em reais'}" aria-describedby="entry-error-amount" required value="${escape(data.amount)}"></div></div>
           <span class="entry-badge">BRL</span>
           <button type="button" data-entry-clear="amount" aria-label="Limpar valor">${entryIcon('close')}</button>
@@ -165,7 +163,7 @@ function mountEntry(item = null, origin = null, asSheet = false){
     <div class="entry-toast" role="status"></div>
     <dialog class="entry-dialog"><form method="dialog"><h2>Descartar alterações?</h2><p>Os dados que você digitou neste lançamento serão perdidos.</p>
       <div class="entry-actions"><button value="keep">Continuar editando</button><button class="entry-primary" value="discard">Descartar</button></div></form></dialog>`;
-  const editor = wireEntry(data,baseline,item,root,origin,masked);
+  const editor = wireEntry(data,baseline,item,root,origin);
   if(origin) entryEditor = {...editor,origin,route:location.hash,state:history.state};
   if(!sheet) return;
   const viewport = window.visualViewport;
@@ -200,13 +198,7 @@ function formatEntryAmount(cents){
   return entryAmountFormat.format(digits.slice(0,-2) + '.' + digits.slice(-2));
 }
 
-function parseCents(value, masked){
-  if(!masked){
-    const decimal = /^(\d+)(?:[,.](\d{0,2}))?$/.exec(value.trim());
-    if(!decimal) return null;
-    const cents = Number(decimal[1]) * 100 + Number((decimal[2] ?? '').padEnd(2,'0'));
-    return Number.isSafeInteger(cents) ? cents : null;
-  }
+function parseCents(value){
   const cents = Number(value.replace(/\D/g,''));
   return Number.isSafeInteger(cents) ? cents : null;
 }
@@ -332,22 +324,19 @@ function updateEntryPreview(element,data,cents,item){
   main.querySelector('.entry-curve polyline').setAttribute('points',points);
 }
 
-function wireEntry(data,baseline,item,root,origin,masked){
+function wireEntry(data,baseline,item,root,origin){
   const element = root.querySelector('.entry-form');
   const field = name => element.elements.namedItem(name);
   const status = element.querySelector('#form-status');
   const amountInput = field('amount');
   let maskedAmount = amountInput.value;
   const moveAmountCaret = () => amountInput.setSelectionRange(amountInput.value.length,amountInput.value.length);
-  if(masked){
-    amountInput.addEventListener('focus',moveAmountCaret);
-    amountInput.addEventListener('click',moveAmountCaret);
-  }
+  amountInput.addEventListener('focus',moveAmountCaret);
+  amountInput.addEventListener('click',moveAmountCaret);
   let receipt = data.receipt;
   let receiptInvalid = false;
   const read = () => ({
     ...(item ? {editId:item.id} : {}),
-    amountMasked:masked,
     type:field('kind').value,amount:field('amount').value,date:field('date').value,category:field('category').value,
     description:field('description').value,paymentMethod:field('paymentMethod').value,
     destinationPaymentMethod:field('destinationPaymentMethod').value,status:field('status').value,notes:field('notes').value,
@@ -361,7 +350,7 @@ function wireEntry(data,baseline,item,root,origin,masked){
   }
   function refresh(){
     draft = read();
-    const cents = parseCents(draft.amount,masked);
+    const cents = parseCents(draft.amount);
     const transfer = draft.type === 'Transferência';
     const paymentLabel = element.querySelector('[data-entry-payment-label]');
     if(paymentLabel) paymentLabel.textContent = transfer ? 'Origem' : 'Pagamento';
@@ -411,8 +400,8 @@ function wireEntry(data,baseline,item,root,origin,masked){
   element.addEventListener('input',event=>{
     const {name} = event.target;
     if(['receipt','kind','repeat','split'].includes(name)) return;
-    if(name === 'amount' && masked){
-      const cents = parseCents(amountInput.value,masked);
+    if(name === 'amount'){
+      const cents = parseCents(amountInput.value);
       if(cents !== null) maskedAmount = formatEntryAmount(cents);
       amountInput.value = maskedAmount;
       moveAmountCaret();
@@ -447,7 +436,7 @@ function wireEntry(data,baseline,item,root,origin,masked){
       error('date','');
     }
     if(clear === 'amount'){
-      amountInput.value = maskedAmount = masked ? formatEntryAmount(0) : '';
+      amountInput.value = maskedAmount = formatEntryAmount(0);
       amountInput.focus();
       moveAmountCaret();
       error('amount','');
@@ -489,12 +478,10 @@ function wireEntry(data,baseline,item,root,origin,masked){
     if(saveBusy) return;
     const keepEditing = event.submitter?.value === 'another';
     const current = read();
-    const cents = parseCents(current.amount,masked);
+    const cents = parseCents(current.amount);
     const transfer = current.type === 'Transferência';
     const errors = {
-      amount:cents ? '' : !masked
-        ? 'Informe um valor positivo com até duas casas decimais, como 12,50.'
-        : 'Informe um valor maior que R$ 0,00.',
+      amount:cents ? '' : 'Informe um valor maior que R$ 0,00.',
       description:current.description.trim() ? '' : 'Informe uma descrição.',
       category:categories[current.type].includes(current.category) ? '' : 'Selecione uma categoria.',
       date:current.date && field('date').validity.valid ? '' : 'Informe uma data válida.',

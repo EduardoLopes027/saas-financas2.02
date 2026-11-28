@@ -192,8 +192,7 @@ function salaryForecast(items, reference, user){
     if(date < reference) date = estimate(earliest + 1);
   }
   if(date.startsWith('+')) return null;
-  const openingDate = user?.carryOver === false ? reference.slice(0,7) + '-01' : '';
-  const before = items.filter(item => item.date >= openingDate && item.date < date);
+  const before = items.filter(item => item.date < date);
   const balance = sum(before.filter(item=>item.type==='Receita')) - sum(before.filter(item=>item.type==='Despesa'));
   const days = (Date.parse(date) - Date.parse(reference)) / 86400000;
   return {date, estimated, balance, days, daily:days ? Math.floor(Math.max(0,balance) / days) : null};
@@ -228,7 +227,7 @@ function mountHome(showDashboard){
   const month = items.filter(item => item.date.startsWith(monthKey));
   const [year, monthNumber] = monthKey.split('-').map(Number);
   const days = utcDate(year,monthNumber,0).getUTCDate();
-  const throughToday = items.filter(item => item.date <= today && (accountUser?.carryOver !== false || item.date.startsWith(monthKey)));
+  const throughToday = items.filter(item => item.date <= today);
   const expenses = month.filter(item => item.type === 'Despesa');
   const spent = sum(expenses);
   const monthIncome = sum(month.filter(item => item.type === 'Receita'));
@@ -388,10 +387,6 @@ function updateTransactionSummary(inPeriod){
   const income = sum(incomes);
   const expense = sum(expenses);
   const monthly = monthlyBalance(records(), filters.allMonths ? '' : selectedMonth);
-  if(accountUser?.carryOver === false){
-    monthly.total -= monthly.carryOver;
-    monthly.carryOver = 0;
-  }
   const periodNet = income - expense;
   stitchSlot(main,'period-net').textContent = signedMoney(periodNet, periodNet < 0 ? '−' : '+');
   main.querySelector('[data-total=income]').textContent = signedMoney(income, '+');
@@ -1273,12 +1268,12 @@ function mountSettings(focus){
       <p class="settings-breadcrumb"><a href="#painel">Finanças pessoais</a> / Configurações</p>
       <div class="settings-heading">
         <div><h1 tabindex="-1">Configurações da Conta</h1>
-          <p>Gerencie suas informações pessoais, preferências financeiras e segurança.</p></div>
+          <p>Gerencie suas informações pessoais, preferências e segurança.</p></div>
         <span class="settings-sync" ${synced ? '' : 'hidden'}>Última atualização do perfil: <span data-settings-sync>${escape(synced)}</span></span>
       </div>
       <nav class="settings-pills" aria-label="Seções de configurações">
         <button type="button" data-settings-target="settings-profile" aria-current="location">Perfil</button>
-        <button type="button" data-settings-target="settings-preferences">Preferências Financeiras</button>
+        <button type="button" data-settings-target="settings-preferences">Preferências do Sistema</button>
         <button type="button" data-settings-target="settings-security">Segurança &amp; Login</button>
       </nav>
       ${user ? '' : '<p class="settings-demo">Demonstração com dados fictícios. Entre em uma conta para alterar configurações.</p>'}
@@ -1338,7 +1333,6 @@ function mountSettings(focus){
       </section>
       <section class="settings-card" aria-labelledby="settings-preferences">
         <h2 id="settings-preferences" tabindex="-1">${icon('tune')} Preferências do Sistema</h2>
-        <p>Configure a aparência e os cálculos financeiros do FinFlow.</p>
         <form id="settings-preferences-form">
           <fieldset ${locked}>
             <div class="settings-option">
@@ -1347,18 +1341,6 @@ function mountSettings(focus){
                 <label><input type="radio" name="theme" value="light"${checked(preferences.theme !== 'dark')}><span>Claro</span></label>
                 <label><input type="radio" name="theme" value="dark"${checked(preferences.theme === 'dark')}><span>Escuro</span></label>
               </div>
-            </div>
-            <label class="settings-option">
-              <span>Transportar saldo do mês anterior<small>Inclui o saldo anterior no total do mês.</small></span>
-              <input type="checkbox" role="switch" name="carryOver"${checked(preferences.carryOver !== false)}>
-            </label>
-            <label class="settings-option">
-              <span>Formatação automática de valores<small>Preenche as casas decimais ao digitar lançamentos.</small></span>
-              <input type="checkbox" role="switch" name="amountMask"${checked(preferences.amountMask !== false)}>
-            </label>
-            <div class="settings-option">
-              <div><label for="settings-currency">Moeda principal</label><small>Moeda dos lançamentos e extratos.</small></div>
-              <select name="currency" id="settings-currency"><option value="BRL">BRL (R$) – Real Brasileiro</option></select>
             </div>
           </fieldset>
           <p class="settings-feedback" role="alert"></p>
@@ -1406,8 +1388,8 @@ function wireSettings(){
     preferences.addEventListener('change',event=>{
       if(preferenceState !== state) return;
       const control = event.target;
-      if(!['theme','carryOver','amountMask','currency'].includes(control.name)) return;
-      state.pending[control.name] = control.type === 'checkbox' ? control.checked : control.value;
+      if(control.name !== 'theme') return;
+      state.pending.theme = control.value;
       state.failed = false;
       clearTimeout(settingsToastTimer);
       root.querySelector('.settings-toast').textContent='';
