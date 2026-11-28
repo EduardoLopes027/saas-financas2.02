@@ -257,10 +257,16 @@
 :is(.dark, [data-theme="dark"]) .transactions-table th { background: var(--theme-field); color: var(--theme-secondary); }
 :is(.dark, [data-theme="dark"]) .transactions-table tbody tr { background: var(--theme-card); }
 :is(.dark, [data-theme="dark"]) .transactions-table tbody tr:hover { background: var(--theme-hover); }
-:is(.dark, [data-theme="dark"]) :is(.transactions-category, .transactions-stat-badge, .transactions-balance-breakdown, .transactions-delete-summary) {
+:is(.dark, [data-theme="dark"]) :is(.transactions-category, .transactions-stat-badge, .transactions-delete-summary) {
   background: var(--theme-field);
   border-color: var(--theme-line);
   color: var(--theme-ink);
+}
+:is(.dark, [data-theme="dark"]) .transactions-balance-breakdown {
+  background: transparent;
+  border-top: 1px solid var(--theme-line);
+  border-radius: 0;
+  padding: .75rem 0 0;
 }
 :is(.dark, [data-theme="dark"]) .transactions-stat { --stat-icon-fill: var(--theme-indigo-soft); }
 :is(.dark, [data-theme="dark"]) .transactions-stat[data-tone=income] { --stat-icon-fill: var(--theme-emerald-soft); }
